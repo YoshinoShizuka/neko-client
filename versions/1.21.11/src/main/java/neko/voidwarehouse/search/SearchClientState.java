@@ -2,6 +2,7 @@ package neko.voidwarehouse.search;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.components.EditBox;
+import neko.voidwarehouse.fill.FillRequestPayload;
 
 import java.util.List;
 
@@ -49,6 +50,18 @@ public final class SearchClientState {
     private static long lastApplySentAt;
     private static long lastHelloSentAt;
 
+    /**
+     * 当前屏幕是不是<b>虚空仓库</b>。
+     *
+     * <p>判据只有一个：<b>这个菜单收到过服务端的 catalog</b> —— 服务端只在
+     * {@code player.containerMenu instanceof VoidWarehouseMenu} 时才回 catalog，
+     * 所以「收到过」就是「服务端认过这个界面」。普通大箱子永远不会置 true。</p>
+     *
+     * <p>为什么不能只看 {@code !index.isEmpty()}：仓库里一件物品都没有（或全是
+     * 客户端不认识的 id）时目录是空表，那和「这不是仓库」用 index 分不开。</p>
+     */
+    private static boolean warehouse;
+
     private SearchClientState() {
     }
 
@@ -57,6 +70,7 @@ public final class SearchClientState {
         box = searchBox;
         index = List.of();
         pendingQuery = null;
+        warehouse = false;
         sendHello();
     }
 
@@ -65,6 +79,7 @@ public final class SearchClientState {
         box = null;
         index = List.of();
         pendingQuery = null;
+        warehouse = false;
     }
 
     /** 服务端回目录了：建索引、亮出搜索框，把已输入的查询立刻补一次匹配 */
@@ -72,11 +87,17 @@ public final class SearchClientState {
         if (box == null) {
             return;
         }
+        warehouse = true;
         index = SearchIndex.build(itemIds, SearchCatalogResolver::displayNameOf);
         box.setVisible(true);
         if (!box.getValue().isBlank()) {
             requestApply(box.getValue());
         }
+    }
+
+    /** 当前界面是不是虚空仓库（收到过 catalog）；Ctrl+Alt+左键 的门禁之一 */
+    public static boolean isWarehouse() {
+        return warehouse;
     }
 
     /** 搜索框内容变化（responder）：只记下待发查询，真正发送在 tick 里带尾随防抖 */
@@ -124,5 +145,25 @@ public final class SearchClientState {
         if (ClientPlayNetworking.canSend(SearchApplyPayload.TYPE)) {
             ClientPlayNetworking.send(new SearchApplyPayload(matchedIds));
         }
+    }
+
+    /**
+     * Ctrl + Alt + 左键：把「这一格」的填充请求发给服务端 —— 服务端会把这格的物品
+     * <b>取出到背包放不下为止</b>（常规模式纯散货、潜影盒模式给满盒，都由服务端按
+     * 那个玩家当前的模式与真实背包现算）。
+     *
+     * <p><b>只发 slotId</b>：物品是什么、能装多少，全由服务端从自己的数据算，
+     * 客户端报的数字一概不作数。</p>
+     *
+     * @return {@code true} = 请求已发出（调用方<b>必须取消原版点击</b>，否则会顺手再取 1 个）；
+     *         {@code false} = 对端没这条通道（旧服务端 / 纯原版服），调用方<b>什么都别做</b>，
+     *         让这次点击退回原版语义
+     */
+    public static boolean sendFill(int slotId) {
+        if (!ClientPlayNetworking.canSend(FillRequestPayload.TYPE)) {
+            return false;
+        }
+        ClientPlayNetworking.send(new FillRequestPayload(slotId));
+        return true;
     }
 }

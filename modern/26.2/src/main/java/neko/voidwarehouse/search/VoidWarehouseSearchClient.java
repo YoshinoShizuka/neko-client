@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import neko.voidwarehouse.fill.FillRequestPayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +41,15 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         try {
             PayloadTypeRegistry.serverboundPlay().register(
                     SearchApplyPayload.TYPE, SearchApplyPayload.CODEC);
+        } catch (IllegalArgumentException alreadyRegistered) {
+            // 单人：同上
+        }
+        // C2S ×3：Ctrl+Alt+左键 的填充请求（0.2.0 新增）。
+        // 通道 id 与服务端 carpet_neko_addition:fill_request 完全一致，
+        // 载荷只有一个 VarInt slotId —— 物品是什么、能装多少，全由服务端自己算。
+        try {
+            PayloadTypeRegistry.serverboundPlay().register(
+                    FillRequestPayload.TYPE, FillRequestPayload.CODEC);
         } catch (IllegalArgumentException alreadyRegistered) {
             // 单人：同上
         }

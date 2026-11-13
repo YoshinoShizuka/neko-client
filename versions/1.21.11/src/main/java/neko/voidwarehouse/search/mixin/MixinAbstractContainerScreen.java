@@ -8,6 +8,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.Slot;
 import neko.voidwarehouse.search.SearchClientState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -58,6 +59,9 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     protected int imageWidth;
     @Shadow
     protected int imageHeight;
+    /** 鼠标当前悬停的槽位（原版 {@code mouseMoved} 更新）；Ctrl+Alt+左键 靠它定位 */
+    @Shadow
+    protected Slot hoveredSlot;
 
     // 🔴 addRenderableWidget 不在这里 @Shadow：它声明在父类 Screen，而 @Shadow 只查
     // 目标类自己声明的成员（2026-11-01 真机崩溃实录）—— 父类成员走 AccessorScreen 的
@@ -157,6 +161,82 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     }
 
     // ------------------------------------------------------------------ 鼠标
+
+    /** 内容格上界：前 5 行 × 9 列（= 服务端 {@code VoidWarehouseData.NAV_START}） */
+    @Unique
+    private static final int CONTENT_SLOTS = 45;
+
+    /**
+     * 鼠标左键在 {@code MouseButtonEvent.button()} 里的编码。
+     *
+     * <p>🔴 <b>26.3 是 1 基，26.1.x / 26.2 / 1.21.11 是 0 基</b>（javap 实证）：
+     * 26.3 的 {@code MouseHandler#onButton} 里 {@code button()==1 → isLeftPressed}、
+     * {@code ==2 → 中键}、{@code ==3 → 右键}，{@code AbstractContainerScreen#mouseClicked}
+     * 也判 {@code button()==1 || button()==3} 才进槽位逻辑；而 26.2 及更早判的是
+     * {@code ==0 || ==1}。<b>同一个手势在不同版本落到不同数字</b>，所以这份源码
+     * 不能与其它四份共享常量值 —— 改缓存目录里的版本号时先确认这个数。</p>
+     */
+    @Unique
+    private static final int LEFT_BUTTON = 0;
+
+    /**
+     * Ctrl + Alt + 左键：把这一格的物品<b>取出到背包放不下为止</b>
+     * （常规模式纯散货、潜影盒模式给满盒 —— 模式与容量全由服务端现算）。
+     *
+     * <h2>为什么必须在 HEAD 拦下并 cancel</h2>
+     * <p>不 cancel 的话，服务端先按普通左键取 1 个、再收到 fill_request 取一整批 ——
+     * 玩家点一下会多拿 1 个（两笔都扣账，但「点一次多 1 个」不是任何一条语义）。</p>
+     *
+     * <h2>为什么只有发出去才 cancel</h2>
+     * <p>对端没这条通道（旧服务端 / 纯原版服）时 {@code sendFill} 返回 false，
+     * 这里原样放行 —— 点击退回「取 1 个」的原版语义，装了旧客户端的玩家
+     * 感知不到任何异常，与搜索框的降级策略一致。</p>
+     *
+     * <h2>为什么坐标要再校一次</h2>
+     * <p>{@code hoveredSlot} 由 {@code mouseMoved} 更新；鼠标瞬移后同帧点击时，
+     * 它可能还指着上一格。用 {@code slot.x/y}（容器内坐标）+ {@code leftPos/topPos}
+     * 再验一次 16×16 命中，就不会把请求发到错的格子上。
+     * 不用 {@code isHovering}：26.3 的 {@code isHovering(Slot,…)} 是 protected、
+     * 1.21.11 的同名重载却是 private，自己算坐标才是五版本同文。</p>
+     */
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void voidwarehouseSearch$onMouseClickedFill(MouseButtonEvent event, boolean doubleClick,
+                                                        CallbackInfoReturnable<Boolean> cir) {
+        if (event.button() != LEFT_BUTTON) {
+            return;
+        }
+        // 🔴 26.3 的修饰键位不是 GLFW 那套 2/4：hasControlDown = (mods & 0xC0)!=0、
+        // hasAltDown = (mods & 0x300)!=0（javap 实证：左右键各占一位）。
+        // 手写 2|4 永远判不出来 —— 用接口给的语义方法才是跨版本安全的。
+        if (!event.hasControlDown() || !event.hasAltDown()) {
+            return;
+        }
+        if (!((Object) this.getMenu() instanceof ChestMenu)) {
+            return;
+        }
+        // 服务端认过这个界面（回过 catalog）才算虚空仓库 —— 普通大箱子永远不会 true
+        if (!SearchClientState.isWarehouse()) {
+            return;
+        }
+        Slot slot = this.hoveredSlot;
+        if (slot == null || slot.index < 0 || slot.index >= CONTENT_SLOTS || slot.getItem().isEmpty()) {
+            return;
+        }
+        double relX = event.x() - (this.leftPos + slot.x);
+        double relY = event.y() - (this.topPos + slot.y);
+        if (relX < 0 || relX >= 16 || relY < 0 || relY >= 16) {
+            return;
+        }
+        if (!SearchClientState.sendFill(slot.index)) {
+            return;
+        }
+        // 原版点击被吞掉，它的「点框外退出搜索」也不会执行 —— 这里补上，
+        // 否则键盘焦点会留在搜索框里，玩家以为自己在取货、其实在打字
+        if (this.voidwarehouseSearch$searchBox != null && this.voidwarehouseSearch$searchBox.isFocused()) {
+            this.voidwarehouseSearch$setSearchFocused(false);
+        }
+        cir.setReturnValue(true);
+    }
 
     /**
      * 点击行为：<b>点框 = 聚焦 + 顺手刷新一次目录</b>（服务端限流之内）；
