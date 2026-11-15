@@ -89,9 +89,12 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         // 每次进世界重读一次配置：手改过 json 的玩家不用重启游戏，进出一次世界即可生效
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             SearchConfig.loadFromFile();
-            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={}（{}）",
+            // 取满组合键一起打出来：「取满没反应」时先看这一行，能立刻分辨
+            // 「组合键没读到」和「读到了但判据不对」
+            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={} 取满组合键={}（{}）",
                     SearchConfig.isSearchBoxEnabled() ? "开" : "关",
                     SearchConfig.isFillGestureEnabled() ? "开" : "关",
+                    SearchConfig.fillComboDisplay(),
                     "config/neko-client.json");
         });
 

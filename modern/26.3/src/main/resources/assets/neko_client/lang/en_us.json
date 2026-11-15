@@ -1,8 +1,10 @@
 {
   "neko_client.config.name.searchBox": "Search box",
   "neko_client.config.comment.searchBox": "Shows a search box on top of the Void Warehouse screen.\nMatch by name, pinyin, initials or registry id. Turning this off also stops the catalog request.",
-  "neko_client.config.name.fillGesture": "Ctrl+Alt+Left fill-to-full",
-  "neko_client.config.comment.fillGesture": "Hold Ctrl+Alt and left-click a warehouse slot to withdraw that item\nuntil your inventory cannot hold any more. Loose mode fills loose stacks;\nshulker-box mode fills full boxes.",
+  "neko_client.config.name.fillGesture": "Fill-to-full gesture",
+  "neko_client.config.comment.fillGesture": "Hold the fill combo and click a warehouse slot to withdraw that item\nuntil your inventory cannot hold any more. Loose mode fills loose stacks;\nshulker-box mode fills full boxes. The combo is on the Hotkeys tab.",
+  "neko_client.config.name.fillCombo": "Fill combo",
+  "neko_client.config.comment.fillCombo": "Hold this, then left-click a warehouse slot to fill that slot up to your\ninventory's limit. Must include a mouse button (BUTTON_1 = left).\nEmpty = off (the toggle above then does nothing).",
   "neko_client.config.name.openGui": "Open config GUI",
   "neko_client.config.comment.openGui": "Opens this mod's config screen (toggles and hotkeys live there).",
   "neko_client.gui.title": "Void Warehouse Search · Settings",
@@ -11,6 +13,6 @@
   "neko_client.hotkeys.category": "Void Warehouse Search",
   "message.neko_client.search_on": "Void Warehouse · search box: ON",
   "message.neko_client.search_off": "Void Warehouse · search box: OFF",
-  "message.neko_client.fill_on": "Void Warehouse · Ctrl+Alt+Left fill: ON",
-  "message.neko_client.fill_off": "Void Warehouse · Ctrl+Alt+Left fill: OFF"
+  "message.neko_client.fill_on": "Void Warehouse · fill gesture: ON",
+  "message.neko_client.fill_off": "Void Warehouse · fill gesture: OFF"
 }

@@ -3,8 +3,10 @@
 纯客户端 Fabric mod，给「虚空仓库」的界面（一个 6 行原版大箱子）加两件事：
 
 1. **搜索框**：支持**中文 / 拼音全拼 / 拼音首字母 / 注册名**搜索筛选物品。服务端 GUI 一个字节不变，纯原版玩家零感知。
-2. **Ctrl + Alt + 左键：把这一格的物品取出到背包放不下为止**（0.2.0 新增）。常规模式给**纯散货**（一个盒子都不装），潜影盒模式给**满盒**，都是「能装多少装多少」——装多少由服务端按你的真实背包现算，只取仓库里现有的（不走 9 合 1 兑换）。
-3. **两个功能各有独立开关 + 可自定义热键**（0.2.0 起）。开关与热键都由 **malilib** 管（就是 MiniHUD / Litematica 那套）：一行一个「复选框 + 按键按钮」。**热键默认全部留空（未绑定）**，自己到配置界面里绑一个。设置落 `config/neko-client.json`。
+2. **取满手势：按住组合键 + 左键点一格 → 把这一格的物品取出到背包放不下为止**（0.2.0 新增；0.4.3 起组合键由玩家自定义，默认仍是 Ctrl + Alt + 左键）。常规模式给**纯散货**（一个盒子都不装），潜影盒模式给**满盒**，都是「能装多少装多少」——装多少由服务端按你的真实背包现算，只取仓库里现有的（不走 9 合 1 兑换）。
+3. **两个功能各有独立开关 + 可自定义热键**（0.2.0 起）。开关与热键都由 **malilib** 管（就是 MiniHUD / Litematica 那套）：一行一个「复选框 + 按键按钮」。**开关热键默认全部留空（未绑定）**，自己到配置界面里绑一个。设置落 `config/neko-client.json`。
+
+> 🔴 **0.4.3 把「取满」的组合键取出来了**：以前是写死的 Ctrl + Alt + 左键，现在是一个正经的配置项 `keyFillCombo`（默认值就是老组合键，所以升级后手感不变）。它出现在配置界面的**「快捷键」页**；想改成 `Shift + 左键`、`R + 左键`、甚至只要 `左键` 都行，**清空它 = 关掉这个手势**。绑定里必须包含一个鼠标键 —— 「取满哪一格」只能由「点在哪」决定，纯键盘热键表达不了目标格。
 
 > 🔴 **0.4.0 改了名字**（0.4.1 修正了其中一处）：mod id `neko_voidwarehouse_search` → `neko_client`，产物 `neko-voidwarehouse-search` → `neko-client`，配置文件变成 `config/neko-client.json`（旧的 `neko-voidwarehouse-search.json` 不再读取），已绑的热键需要在配置界面里重绑一次。通道 id 没变，服务端不需要任何改动。
 > ⚠️ **0.4.0 有个单人存档必崩的错误，0.4.1 已修**：0.4.0 把四条通道的 payload 类也一起挪进了 `neko.client`，而服务端 mod 里还有一份同名的旧包版本 —— 单人存档两端同进程，注册表里躺着的是**服务端那个类**的 codec，客户端却发自己类的实例，编码时 cast 失败（`Can't encode 'SearchHelloPayload[]', expected 'SearchHelloPayload[]'`，两个类同名不同包，报错看着一模一样）⇒ **一开仓库界面就断线**。0.4.1 把那四个类搬回 `neko.voidwarehouse.*` 并与服务端**逐字节对齐**；改了名字的只有客户端自己的逻辑（索引 / 配置 / 热键 / mixin）。
@@ -26,10 +28,10 @@
 - 过滤是**会话级**状态：关掉界面即消失，不写存档；页码回第一页；「可兑」虚拟条目同样参与搜索；
 - 服务端限流：hello 100ms / apply 50ms，目录上限 4096 种，未知 id 静默忽略。
 
-### Ctrl + Alt + 左键（0.2.0）
+### 取满手势（0.2.0 起；0.4.3 起组合键可自定义）
 
 ```
-按住 Ctrl+Alt 左键点仓库格 ──fill_request{slotId}──▶ 服务端
+按住组合键 + 左键点仓库格 ──fill_request{slotId}──▶ 服务端
                                                       ├─ 校验：菜单必须是虚空仓库（否则静默丢）
                                                       ├─ 校验：slotId 必须是内容格（导航行/背包格不认）
                                                       ├─ 校验：这一格要解析得出物品
@@ -38,6 +40,7 @@
 ◀──────────────────── 聊天提示「已取出 N 个 <物品>」─────────────────────
 ```
 
+- **组合键**：`config/neko-client.json` 的 `keyFillCombo`，默认 `LEFT_CONTROL,LEFT_ALT,BUTTON_1`。判据是「**这一下点击的鼠标键在绑定里，且绑定里其余的键都真的按着**」，所以玩家绑什么就是什么；空串 = 手势关闭。**必须包含一个鼠标键**（`BUTTON_1` = 左键、`BUTTON_2` = 右键、`BUTTON_3` = 中键，名字由 malilib 定）；
 - **只发 `slotId`**：物品是什么、能装多少，全由服务端从自己的数据和你的真实背包现算，客户端报的数字一概不作数；
 - 客户端**只有真的把包发出去**才 cancel 掉原版点击；对端是老服务端（没这条通道）时原样放行，退回「取 1 个」；
 - 「能装多少」= 三个上限取最小：背包放得下多少 / 仓库里有多少 / 盒模式下材料够做几盒。**一个都装不下时**会发一句提示，不会静默失败；
@@ -49,8 +52,8 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.2.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.4.2.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.3.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.4.3.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -64,25 +67,28 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 
 - 打开虚空仓库界面，点击界面上方的搜索框；
 - 输入 `铁锭` / `tieding` / `td` / `iron_ingot` 均可命中；清空输入框 = 恢复完整列表；
-- **Ctrl + Alt + 左键**点仓库里的物品格：取出到背包放不下为止（常规模式纯散货、潜影盒模式满盒）；
-- 🔴 聚焦搜索框时**所有按键都会被吞掉**（ESC = 退出搜索框，再按一次关界面）——否则数字键 `1-9` 会触发原版「把快捷栏整组存进仓库」的 SWAP 语义。Ctrl+Alt+左键 命中槽位时会自动让出焦点（原版点击被 cancel，它的「点框外失焦」不会执行，所以这里补上）。
+- **按住组合键（默认 Ctrl + Alt）+ 左键**点仓库里的物品格：取出到背包放不下为止（常规模式纯散货、潜影盒模式满盒）；
+- 🔴 聚焦搜索框时**所有按键都会被吞掉**（ESC = 退出搜索框，再按一次关界面）——否则数字键 `1-9` 会触发原版「把快捷栏整组存进仓库」的 SWAP 语义。组合键命中槽位时会自动让出焦点（原版点击被 cancel，它的「点框外失焦」不会执行，所以这里补上）。
 
-### 开关与快捷键（0.2.0 起，0.3.0 换成 malilib，0.4.0 去掉默认键）
+### 开关与快捷键（0.2.0 起，0.3.0 换成 malilib，0.4.0 去掉默认键，0.4.3 取满组合键可改）
 
 两个功能各自独立，互不影响；关掉一个不会影响另一个。
 
 | 配置项 | 默认 | 关掉之后 |
 | --- | --- | --- |
-| `searchBox` | `true` | 界面里**不再创建**搜索框（不占地方、不吃按键、不发 `search_apply`），Ctrl+Alt+左键 照常可用 |
-| `fillGesture` | `true` | Ctrl+Alt+左键 退回原版「取 1 个」，搜索框照常可用 |
+| `searchBox` | `true` | 界面里**不再创建**搜索框（不占地方、不吃按键、不发 `search_apply`），取满手势照常可用 |
+| `fillGesture` | `true` | 取满手势退回原版「取 1 个」，搜索框照常可用（组合键还绑着也不响应） |
 
 | 热键（配置界面里的名字） | 默认键 | 说明 |
 | --- | --- | --- |
 | 搜索框 / `searchBox` | **未绑定** | 切搜索框；**界面开着时立刻生效**（连带清空输入、撤掉服务端过滤） |
-| Ctrl+Alt+左键 取满 / `fillGesture` | **未绑定** | 切取满手势；立刻生效，下一次左键就走新状态 |
+| 取满手势 / `fillGesture` | **未绑定** | 切取满手势；立刻生效，下一次点击就走新状态 |
+| 取满组合键 / `fillCombo` | `LEFT_CONTROL,LEFT_ALT,BUTTON_1` | **不是开关，是手势本身**：按住它再左键点格子。清空 = 关掉手势 |
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面（开关、热键都在里面改） |
 
-🔴 **为什么默认不给键**：`H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车，按下去先触发对方的概率远高于触发我们。空绑定在 malilib 里是合法状态（`allowEmpty=true`），代价只是「第一次要自己绑」。
+🔴 **为什么三条开关热键默认不给键**：`H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车，按下去先触发对方的概率远高于触发我们。空绑定在 malilib 里是合法状态（`allowEmpty=true`），代价只是「第一次要自己绑」。
+
+🔴 **为什么 `fillCombo` 是唯一的例外（默认给了值）**：它的默认值**就是 0.4.2 及以前写死的那个组合键**。这里若也留空，老玩家升级后会看到「模组还在、开关还是开、可是按下去什么都不发生」—— 等于把一次「可配置化」做成了功能删除。
 
 ### 配置界面分了页（0.4.2 起，与 MiniHUD 同款）
 
@@ -90,14 +96,14 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 
 | 分类 | 里面有什么 |
 | --- | --- |
-| **全部** | 三个条目全列一遍（想一次看全就停在这页） |
-| **通用** | 两个功能开关：搜索框、Ctrl+Alt+左键 取满 |
-| **快捷键** | 纯热键条目（目前只有「打开配置界面」一条） |
+| **全部** | 四个条目全列一遍（想一次看全就停在这页） |
+| **通用** | 两个功能开关：搜索框、取满手势 |
+| **快捷键** | 纯热键条目：**取满组合键**、打开配置界面 |
 
-🔴 **为什么「快捷键」页只有一条**：两个功能开关是 `ConfigBooleanHotkeyed`，**一行里同时有复选框和按键按钮** —— 它们的热键本来就摆在功能自己那一行上（在「通用」页里就能改）。MiniHUD 也是这么分的：它的 `GENERIC_HOTKEYS` 页只放 `Hotkeys.HOTKEY_LIST`，功能自己的键留在功能页。
+🔴 **取满组合键为什么在「快捷键」页而不是「通用」页**：两个功能开关是 `ConfigBooleanHotkeyed`，**一行里同时有复选框和按键按钮** —— 它们的热键（= 切开关）本来就摆在功能自己那一行上。而 `fillCombo` 是个**纯热键**（没有布尔值），且它指的是「手势本身」而不是「开关」；放进「通用」页会和 `fillGesture` 挤在一起，看起来像两个开关。MiniHUD 也是这么分的：它的 `GENERIC_HOTKEYS` 页只放纯热键条目。
 
-- **怎么绑**：进游戏后从 **Mod Menu**（装了的话）或任意 malilib 模组的配置界面右上角下拉框里选「Neko Client」，点热键按钮 → 按下新键（ESC 取消、Delete 清空）。改完点界面随便一处即可，`onSettingsChanged` / 关界面都会立刻存盘；
-- **配置文件**：`config/neko-client.json`（首次启动自动生成，带 `_readme` 注释字段；热键存的是 malilib 的存储串，如 `H`、`LEFT_CONTROL,LEFT_ALT`，空串 = 未绑定）；
+- **怎么绑**：进游戏后从 **Mod Menu**（装了的话）或任意 malilib 模组的配置界面右上角下拉框里选「Neko Client」，点热键按钮 → 按下新键（**鼠标键也能绑**：先点一下按钮进入「> … <」态，再按住修饰键点鼠标键；ESC 取消、Delete 清空）。改完点界面随便一处即可，`onSettingsChanged` / 关界面都会立刻存盘；
+- **配置文件**：`config/neko-client.json`（首次启动自动生成，带 `_readme` 注释字段；热键存的是 malilib 的存储串，如 `H`、`LEFT_CONTROL,LEFT_ALT`、`LEFT_CONTROL,LEFT_ALT,BUTTON_1`，空串 = 未绑定）；
 - **生效时机**：界面里改 / 按热键 → 立刻 + 当场写回；手改 json → **退出重进一次世界**（进服时重读）；
 - 两个开关**都关**时客户端不发 `search_hello`，连那 ≈30 KB 的目录都不拉——只想安静用原版仓库的玩家可以这样彻底关掉；
 - 🔴 **为什么必须是 malilib**：原版按键绑定只在 `Minecraft.screen == null` 时派发，而这俩键都是**在仓库界面里**按的，用原版绑定等于永远按不出来。malilib 的热键带 `Context`，这里取 `ANY`（游戏内 + 界面都响应）；同时设 `cancel=false`，所以搜索框聚焦时按热键仍然是正常打出字符（回调里也会主动让路）；
@@ -109,7 +115,7 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
   ```bat
   .\gradlew.bat build dist
   .\gradlew.bat :common:test          # SearchIndex 单测（11 条）
-  .\gradlew.bat :modern:26.3:test     # 配置 JSON 单测（17 条）
+  .\gradlew.bat :modern:26.3:test     # 配置 JSON 单测（20 条）
   .\gradlew.bat :versions:1.21.11:dist
   ```
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper；按子工程逐个跑最稳。
@@ -118,7 +124,7 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
   - 26.3 → `0.30.1`；26.2 → `0.29.6`；**26.1.2 / 26.1.1 → 同一份 `0.28.12`**（masa 没出 26.1.1 的独立产物，同小版本 API 一致，与 litematica-printer 同做法）；1.21.11 → `0.27.20`；
   - 🔴 **26.x 用 `implementation`，1.21.11 必须 `modImplementation`**：后者那份 jar 是**中间名**（`GuiBase extends net.minecraft.class_437`），不 remap 一行都编译不过；
   - malilib 的 `conditional-mixin` 依赖已被它打进自己的 jar（`META-INF/jars/`），maven 上那个坐标解析不到，所以显式 `exclude` 掉。
-- 🔴 **与服务端 jar 成对更新**：`neko/client/` 三个 payload 类 + `neko/client/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric knot 只加载一份），改一边务必同步改另一边。payload 源文件按 carpet 26.3 基准 md5 校验：hello `ee8150d8` / catalog `fc27b613` / apply `856c374a` / fill `ca737c87`（五版本 + 服务端六份逐字节一致）。
+- 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric knot 只加载一份），改一边务必同步改另一边。payload 源文件按 carpet 26.3 基准 md5 校验：hello `ee8150d8` / catalog `fc27b613` / apply `856c374a` / fill `ca737c87`（五版本 + 服务端六份逐字节一致）。
 - 1.21.11 走 loom-remap 管线：mixin 注解名编译期硬 remap 成 intermediary（无 refmap 文件，与 carpet-Neko-Addition 1.21.11 同机制）；`dist` 任务必须依赖 `remapJar` 而不是 `jar`（jar 产出的是 dev jar）。
 
 ## 版本差异（仅两处）

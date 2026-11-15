@@ -128,6 +128,7 @@ class SearchConfigJsonTest {
                         searchBox, fill,
                         SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                         SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
+                        SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
                         SearchConfigJson.DEFAULT_KEY_OPEN_GUI);
                 String text = SearchConfigJson.render(written);
                 SearchConfigJson.Values values = SearchConfigJson.parse(text);
@@ -153,7 +154,7 @@ class SearchConfigJsonTest {
     @Test
     @DisplayName("D3 模板写入 false 时是字面量 false，不是 \"false\" 字符串")
     void templateWritesRealBooleans() {
-        String text = renderWith(false, true, "H", "J", "V");
+        String text = renderWith(false, true, "H", "J", "V", "BUTTON_1");
         assertAll(
                 () -> assertTrue(text.contains("\"searchBox\": false"), "应该是裸 false"),
                 () -> assertFalse(text.contains("\"searchBox\": \"false\""), "不能写成字符串"));
@@ -162,7 +163,7 @@ class SearchConfigJsonTest {
     // ------------------------------------------------------------ E 组：语义判据
 
     @Test
-    @DisplayName("E1 默认值：两个功能都开、三个热键全部未绑定（不偷偷占键位）")
+    @DisplayName("E1 默认值：两个功能都开、三条开关热键未绑定、取满组合键默认=老行为")
     void defaultsAreBothEnabledNoHotkeys() {
         SearchConfigJson.Values values = SearchConfigJson.Values.defaults();
         assertAll(
@@ -170,7 +171,11 @@ class SearchConfigJsonTest {
                 () -> assertTrue(values.fillGesture(), "默认 fillGesture 必须开"),
                 () -> assertEquals("", values.keySearchBox(), "搜索框开关默认应未绑定"),
                 () -> assertEquals("", values.keyFillGesture(), "取满开关默认应未绑定"),
-                () -> assertEquals("", values.keyOpenGui(), "开界面默认应未绑定"));
+                () -> assertEquals("", values.keyOpenGui(), "开界面默认应未绑定"),
+                // 🔴 唯一的例外：0.4.3 把写死的 Ctrl+Alt+左键 改成可配置，默认值必须
+                // 等于老行为，否则老玩家升级后「功能还在、按下去没反应」
+                () -> assertEquals("LEFT_CONTROL,LEFT_ALT,BUTTON_1", values.keyFillCombo(),
+                        "取满组合键的默认值必须是老版本的 Ctrl+Alt+左键"));
     }
 
     @Test
@@ -186,13 +191,15 @@ class SearchConfigJsonTest {
     // ------------------------------------------------------------ F 组：热键字段
 
     @Test
-    @DisplayName("F1 缺热键字段 ⇒ 回落「未绑定」（空串），不会偷偷占一个键")
+    @DisplayName("F1 缺热键字段 ⇒ 三条开关热键回落「未绑定」；取满组合键回落老行为的默认组合")
     void missingHotkeysFallBackToUnbound() {
         SearchConfigJson.Values values = SearchConfigJson.parse("{}");
         assertAll(
                 () -> assertEquals("", values.keySearchBox()),
                 () -> assertEquals("", values.keyFillGesture()),
-                () -> assertEquals("", values.keyOpenGui()));
+                () -> assertEquals("", values.keyOpenGui()),
+                () -> assertEquals(SearchConfigJson.DEFAULT_KEY_FILL_COMBO, values.keyFillCombo(),
+                        "组合键的默认值非空，缺字段时要回落到它，不是回落到空"));
     }
 
     @Test
@@ -215,21 +222,69 @@ class SearchConfigJsonTest {
     @DisplayName("F3 组合键串往返不失真（malilib 的逗号分隔写法）")
     void comboHotkeyRoundTrips() {
         SearchConfigJson.Values written = new SearchConfigJson.Values(
-                true, false, "LEFT_CONTROL,LEFT_ALT", "J", "RIGHT_SHIFT,V");
+                true, false, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V");
         assertEquals(written, SearchConfigJson.parse(SearchConfigJson.render(written)));
     }
 
     @Test
     @DisplayName("F4 模板里的热键是带引号的字符串；未绑定时落成空串而不是 null")
     void templateQuotesHotkeys() {
-        String bound = renderWith(true, true, "H", "J", "V");
+        String bound = renderWith(true, true, "H", "J", "V", "BUTTON_1");
         String unbound = SearchConfigJson.render(SearchConfigJson.Values.defaults());
         assertAll(
                 () -> assertTrue(bound.contains("\"keySearchBox\": \"H\""), "热键必须加引号"),
                 () -> assertTrue(bound.contains("\"keyFillGesture\": \"J\""), "热键必须加引号"),
                 () -> assertTrue(bound.contains("\"keyOpenGui\": \"V\""), "热键必须加引号"),
+                () -> assertTrue(bound.contains("\"keyFillCombo\": \"BUTTON_1\""), "组合键必须加引号"),
                 () -> assertTrue(unbound.contains("\"keySearchBox\": \"\""), "未绑定要写成空串"),
-                () -> assertFalse(unbound.contains("null"), "不能落成 null"));
+                () -> assertFalse(unbound.contains("null"), "不能落成 null"),
+                () -> assertTrue(unbound.contains("\"keyFillCombo\": \"LEFT_CONTROL,LEFT_ALT,BUTTON_1\""),
+                        "组合键默认必须落盘，玩家才知道它不是空的、可以改"));
+    }
+
+    // ------------------------------------------------------------ G 组：取满组合键的「清空」语义
+
+    @Test
+    @DisplayName("G1 🔴 字段缺失 ⇒ 默认组合键；字段在但值是空串 ⇒ 就是空（玩家主动关掉了手势）")
+    void fillComboDistinguishesMissingFromCleared() {
+        assertAll(
+                () -> assertEquals(SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
+                        SearchConfigJson.parse("{}").keyFillCombo(),
+                        "老配置文件里没有这个字段 ⇒ 必须回落到老行为（Ctrl+Alt+左键）"),
+                () -> assertEquals("",
+                        SearchConfigJson.parse("{\"keyFillCombo\": \"\"}").keyFillCombo(),
+                        "玩家清空了组合键 ⇒ 必须原样保持为空，不能又长回默认值"));
+    }
+
+    @Test
+    @DisplayName("G2 清空后的空串要能穿过 render→parse 一轮（「关不掉」就是在这里丢的）")
+    void clearedFillComboSurvivesRoundTrip() {
+        SearchConfigJson.Values cleared = new SearchConfigJson.Values(
+                true, true,
+                SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
+                SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
+                "",   // ← 玩家在配置界面里把组合键清掉了
+                SearchConfigJson.DEFAULT_KEY_OPEN_GUI);
+        SearchConfigJson.Values readBack = SearchConfigJson.parse(SearchConfigJson.render(cleared));
+        assertEquals("", readBack.keyFillCombo(),
+                "清空后重进世界组合键又回来了 —— 表现为「关不掉这个手势」");
+    }
+
+    @Test
+    @DisplayName("G3 空白串按清空处理（要 trim）；非字符串仍回落默认组合")
+    void fillComboBlankIsClearedButWrongTypeFallsBack() {
+        assertAll(
+                () -> assertEquals("", SearchConfigJson.parse("{\"keyFillCombo\": \"   \"}").keyFillCombo(),
+                        "纯空白 = 清空"),
+                () -> assertEquals(SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
+                        SearchConfigJson.parse("{\"keyFillCombo\": 99}").keyFillCombo(),
+                        "数字不是热键串 ⇒ 回落默认组合，不能当成 \"99\""),
+                () -> assertEquals(SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
+                        SearchConfigJson.parse("{\"keyFillCombo\": null}").keyFillCombo(),
+                        "null ⇒ 回落默认组合"),
+                () -> assertEquals("BUTTON_1",
+                        SearchConfigJson.parse("{\"keyFillCombo\": \"  BUTTON_1 \"}").keyFillCombo(),
+                        "正常值不能被空白判据误吞，但要 trim"));
     }
 
     // ------------------------------------------------------------ 小工具
@@ -238,12 +293,14 @@ class SearchConfigJsonTest {
         return new SearchConfigJson.Values(searchBox, fillGesture,
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
+                SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
                 SearchConfigJson.DEFAULT_KEY_OPEN_GUI);
     }
 
     private static String renderWith(boolean searchBox, boolean fillGesture,
-                                     String keySearchBox, String keyFillGesture, String keyOpenGui) {
+                                     String keySearchBox, String keyFillGesture,
+                                     String keyOpenGui, String keyFillCombo) {
         return SearchConfigJson.render(new SearchConfigJson.Values(
-                searchBox, fillGesture, keySearchBox, keyFillGesture, keyOpenGui));
+                searchBox, fillGesture, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui));
     }
 }

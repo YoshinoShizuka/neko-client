@@ -61,7 +61,7 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     protected int imageWidth;
     @Shadow
     protected int imageHeight;
-    /** 鼠标当前悬停的槽位（原版 {@code mouseMoved} 更新）；Ctrl+Alt+左键 靠它定位 */
+    /** 鼠标当前悬停的槽位（原版 {@code mouseMoved} 更新）；取满手势靠它定位 */
     @Shadow
     protected Slot hoveredSlot;
 
@@ -202,22 +202,27 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     @Unique
     private static final int CONTENT_SLOTS = 45;
 
-    /**
-     * 鼠标左键在 {@code MouseButtonEvent.button()} 里的编码。
-     *
-     * <p>🔴 <b>26.3 是 1 基，26.1.x / 26.2 / 1.21.11 是 0 基</b>（javap 实证）：
-     * 26.3 的 {@code MouseHandler#onButton} 里 {@code button()==1 → isLeftPressed}、
-     * {@code ==2 → 中键}、{@code ==3 → 右键}，{@code AbstractContainerScreen#mouseClicked}
-     * 也判 {@code button()==1 || button()==3} 才进槽位逻辑；而 26.2 及更早判的是
-     * {@code ==0 || ==1}。<b>同一个手势在不同版本落到不同数字</b>，所以这份源码
-     * 不能与其它四份共享常量值 —— 改缓存目录里的版本号时先确认这个数。</p>
+    /*
+     * 🔴 这里原本有一个 LEFT_BUTTON 常量（26.3=1，其余版本=0），0.4.3 起**删掉了**：
+     * 「哪一下点击算取满」现在由玩家绑定的组合键决定，本类不再认识「左键」这个具体按钮。
+     * 顺带说明那个版本差异去了哪：它在 SearchConfig#isFillComboHeld 里被消掉了 ——
+     * 那边算的是 `原版按钮号 - 100`，而 malilib 的 BUTTON_1 在 26.3 恰好是 -99、
+     * 在其余版本恰好是 -100，两边各自都对齐，所以**不需要按版本分叉**。
+     * （26.3 的 button() 是 1 基、26.2 及更早是 0 基；26.3 的 MouseHandler 里
+     *  1=左、2=中、3=右，别拿 GLFW 的 0/1/2 去套。）
      */
-    @Unique
-    private static final int LEFT_BUTTON = 1;
 
     /**
-     * Ctrl + Alt + 左键：把这一格的物品<b>取出到背包放不下为止</b>
-     * （常规模式纯散货、潜影盒模式给满盒 —— 模式与容量全由服务端现算）。
+     * 「取满手势」：按住玩家绑定的组合键 + 点某一格，把这一格的物品
+     * <b>取出到背包放不下为止</b>（常规模式纯散货、潜影盒模式给满盒 —— 模式与容量
+     * 全由服务端现算）。
+     *
+     * <h2>组合键从哪来</h2>
+     * <p>{@code config/neko-client.json} 的 {@code keyFillCombo}，默认
+     * {@code LEFT_CONTROL,LEFT_ALT,BUTTON_1}（= 0.4.2 及以前写死的 Ctrl+Alt+左键）。
+     * 判据在 {@link neko.client.SearchConfig#isFillComboHeld(int)}，<b>本类不认识
+     * Ctrl / Alt / 左键里的任何一个</b> —— 玩家绑什么就是什么，本类只负责把
+     * 「实际点下的按钮号」递过去。</p>
      *
      * <h2>为什么必须在 HEAD 拦下并 cancel</h2>
      * <p>不 cancel 的话，服务端先按普通左键取 1 个、再收到 fill_request 取一整批 ——
@@ -243,13 +248,10 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         if (!neko.client.SearchConfig.isFillGestureEnabled()) {
             return;
         }
-        if (event.button() != LEFT_BUTTON) {
-            return;
-        }
-        // 🔴 26.3 的修饰键位不是 GLFW 那套 2/4：hasControlDown = (mods & 0xC0)!=0、
-        // hasAltDown = (mods & 0x300)!=0（javap 实证：左右键各占一位）。
-        // 手写 2|4 永远判不出来 —— 用接口给的语义方法才是跨版本安全的。
-        if (!event.hasControlDown() || !event.hasAltDown()) {
+        // 🔴 组合键判据绝不能写在这里的 hasControlDown() / hasAltDown() 上：那是
+        // 0.4.2 及以前**写死**的 Ctrl+Alt（26.3 的修饰键位还是 0xC0 / 0x300 的怪编码）。
+        // 现在一律问「这一下点击符不符合玩家绑定的组合键」，本类不认识任何具体的键。
+        if (!neko.client.SearchConfig.isFillComboHeld(event.button())) {
             return;
         }
         if (!((Object) this.getMenu() instanceof ChestMenu)) {

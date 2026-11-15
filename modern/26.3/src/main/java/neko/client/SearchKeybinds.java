@@ -52,6 +52,12 @@ public final class SearchKeybinds {
                 "message.neko_client.fill_off"));
         SearchConfig.OPEN_GUI.getKeybind().setCallback(new OpenGuiCallback());
 
+        // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
+        // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
+        // mouseClicked 里判（见 SearchConfig#isFillComboHeld）。挂上回调反而会多出
+        // 「按下的那一刻就取满某格」这种没有目标格的语义，而且会和点击重复触发。
+        // 它仍然要进下面的 category：这样配置界面里能显示它、能查撞键。
+
         IKeybindManager manager = InputEventHandler.getKeybindManager();
         manager.addHotkeysForCategory(CATEGORY,
                 StringUtils.translate("neko_client.hotkeys.category"),
