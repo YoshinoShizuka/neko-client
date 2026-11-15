@@ -61,7 +61,7 @@ jobs:
       - name: Upload jars (MC ${{ matrix.mc }})
         uses: actions/upload-artifact@v4
         with:
-          name: neko-voidwarehouse-search-mc${{ matrix.mc }}
+          name: neko-client-mc${{ matrix.mc }}
           path: artifacts/*.jar
           if-no-files-found: error
           retention-days: 30

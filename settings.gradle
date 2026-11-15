@@ -9,7 +9,7 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'neko-voidwarehouse-search'
+rootProject.name = 'neko-client'
 
 // ===== 多版本子工程（与 carpet-Neko-Addition 同一套结构约定）=====
 // 新增一个版本 = 复制相邻目录、改它的 gradle.properties，在下面 include 一行。

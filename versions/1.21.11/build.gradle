@@ -113,5 +113,5 @@ tasks.register('dist', Copy) {
     // loom remap 管线：必须拷 remapJar 产物（映射后的 jar），jar 任务产出的是 dev jar
     dependsOn tasks.named('remapJar')
     from tasks.named('remapJar').flatMap { it.archiveFile }
-    into rootProject.layout.projectDirectory.dir('../deliver/neko-voidwarehouse-search')
+    into rootProject.layout.projectDirectory.dir('../deliver/neko-client')
 }

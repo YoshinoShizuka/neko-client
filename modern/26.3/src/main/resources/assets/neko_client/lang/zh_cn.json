@@ -1,0 +1,14 @@
+{
+  "neko_client.config.name.searchBox": "搜索框",
+  "neko_client.config.comment.searchBox": "在虚空仓库界面顶部显示搜索框（中文 / 拼音 / 注册名筛选）。\n关掉后连目录都不再向服务端请求。",
+  "neko_client.config.name.fillGesture": "Ctrl+Alt+左键 取满",
+  "neko_client.config.comment.fillGesture": "按住 Ctrl+Alt 左键点仓库里的物品格：取出到背包放不下为止。\n常规模式给纯散货，潜影盒模式给满盒。",
+  "neko_client.config.name.openGui": "打开配置界面",
+  "neko_client.config.comment.openGui": "打开本模组的配置界面（开关与热键都在里面改）。",
+  "neko_client.gui.title": "虚空仓库搜索 · 设置",
+  "neko_client.hotkeys.category": "虚空仓库搜索",
+  "message.neko_client.search_on": "虚空仓库 · 搜索框：已开启",
+  "message.neko_client.search_off": "虚空仓库 · 搜索框：已关闭",
+  "message.neko_client.fill_on": "虚空仓库 · Ctrl+Alt+左键 取满：已开启",
+  "message.neko_client.fill_off": "虚空仓库 · Ctrl+Alt+左键 取满：已关闭"
+}
