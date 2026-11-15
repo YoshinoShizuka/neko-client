@@ -1,0 +1,9 @@
+{
+  "key.category.neko_voidwarehouse_search.main": "虚空仓库",
+  "key.neko_voidwarehouse_search.toggle_search": "开关：搜索框",
+  "key.neko_voidwarehouse_search.toggle_fill": "开关：Ctrl+Alt+左键 取满",
+  "message.neko_voidwarehouse_search.search_on": "虚空仓库 · 搜索框：已开启",
+  "message.neko_voidwarehouse_search.search_off": "虚空仓库 · 搜索框：已关闭",
+  "message.neko_voidwarehouse_search.fill_on": "虚空仓库 · Ctrl+Alt+左键 取满：已开启",
+  "message.neko_voidwarehouse_search.fill_off": "虚空仓库 · Ctrl+Alt+左键 取满：已关闭"
+}

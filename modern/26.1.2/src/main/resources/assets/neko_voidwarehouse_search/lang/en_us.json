@@ -1,0 +1,9 @@
+{
+  "key.category.neko_voidwarehouse_search.main": "Void Warehouse",
+  "key.neko_voidwarehouse_search.toggle_search": "Toggle search box",
+  "key.neko_voidwarehouse_search.toggle_fill": "Toggle fill-to-full gesture",
+  "message.neko_voidwarehouse_search.search_on": "Void Warehouse · search box: ON",
+  "message.neko_voidwarehouse_search.search_off": "Void Warehouse · search box: OFF",
+  "message.neko_voidwarehouse_search.fill_on": "Void Warehouse · Ctrl+Alt+Left fill: ON",
+  "message.neko_voidwarehouse_search.fill_off": "Void Warehouse · Ctrl+Alt+Left fill: OFF"
+}

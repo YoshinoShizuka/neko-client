@@ -49,7 +49,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * {@code box.render(...)}，焦点光标、hint、选区全部由 EditBox 自己画。</p>
  */
 @Mixin(AbstractContainerScreen.class)
-public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world.inventory.AbstractContainerMenu> {
+public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world.inventory.AbstractContainerMenu>
+        implements neko.voidwarehouse.search.SearchScreenAccess {
 
     @Shadow
     protected int leftPos;
@@ -97,6 +98,10 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         if (!((Object) this.getMenu() instanceof ChestMenu)) {
             return;
         }
+        // 两个功能都关了 ⇒ 连框都不建、hello 也不发，界面上一个字节的残迹都没有
+        if (!neko.voidwarehouse.search.SearchConfig.anyFeatureEnabled()) {
+            return;
+        }
         EditBox box = new EditBox(Minecraft.getInstance().font,
                 this.leftPos + (this.imageWidth - SEARCH_WIDTH) / 2,
                 Math.max(2, this.topPos - SEARCH_HEIGHT - 2),
@@ -109,7 +114,37 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         // 加入 children（事件路由）+ renderables（narration）；渲染是我们自己出帧的
         ((AccessorScreen) (Object) this).voidwarehouseSearch$invokeAddRenderableWidget(box);
         this.voidwarehouseSearch$searchBox = box;
-        SearchClientState.bind(box);
+        SearchClientState.bind(box, this);
+    }
+
+    /**
+     * 开关变化时就地刷新这个界面（{@link neko.voidwarehouse.search.SearchScreenAccess} 的实现）。
+     *
+     * <p>三种情况：</p>
+     * <ul>
+     *   <li><b>刚关掉搜索</b>：先撤焦点（否则字母还会被 {@code charTyped} 送进看不见的框里），
+     *       再清输入、再补一条「空集合 = 清除过滤」——顺序不能反，见
+     *       {@link neko.voidwarehouse.search.SearchClientState#exitSearch()};</li>
+     *   <li><b>刚打开搜索</b>：仓库界面立刻亮框（普通大箱子仍然不亮，靠 {@code warehouse} 判）；</li>
+     *   <li>开关没动（例如只切了取满）：什么都不做。</li>
+     * </ul>
+     */
+    @Unique
+    @Override
+    public void vwsearch$applyFeatureState() {
+        EditBox box = this.voidwarehouseSearch$searchBox;
+        if (box == null) {
+            return;
+        }
+        boolean on = neko.voidwarehouse.search.SearchConfig.isSearchBoxEnabled();
+        if (!on) {
+            this.voidwarehouseSearch$setSearchFocused(false);
+            if (!box.getValue().isEmpty()) {
+                box.setValue("");
+            }
+            neko.voidwarehouse.search.SearchClientState.exitSearch();
+        }
+        box.setVisible(on && neko.voidwarehouse.search.SearchClientState.isWarehouse());
     }
 
     /** 屏幕关闭：清客户端状态（服务端的过滤跟着菜单消失，不需要清理包） */
@@ -202,6 +237,11 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void voidwarehouseSearch$onMouseClickedFill(MouseButtonEvent event, boolean doubleClick,
                                                         CallbackInfoReturnable<Boolean> cir) {
+        // 开关关着 ⇒ 完全退回原版语义（不 cancel、不发包），装了这个 mod 的玩家
+        // 也感知不到自己装了它
+        if (!neko.voidwarehouse.search.SearchConfig.isFillGestureEnabled()) {
+            return;
+        }
         if (event.button() != LEFT_BUTTON) {
             return;
         }

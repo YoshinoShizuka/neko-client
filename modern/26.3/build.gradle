@@ -34,6 +34,15 @@ dependencies {
     // 本子工程的运行时类路径
     implementation "com.github.stuxuhai:jpinyin:${project.jpinyin_version}"
     include "com.github.stuxuhai:jpinyin:${project.jpinyin_version}"
+
+    // 纯逻辑单测（不启动游戏）：目前只覆盖 SearchConfig 的 JSON 读写两个纯函数。
+    // 只挂在本子工程上 —— 五份源码仍逐字节相同，测试只在 26.3 跑一遍就够。
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 loom {

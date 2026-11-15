@@ -44,6 +44,8 @@ public final class SearchClientState {
     private static final long HELLO_INTERVAL_MS = 500L;
 
     private static EditBox box;
+    /** 当前绑定的容器界面（{@link SearchScreenAccess}）；热键切换开关时用它就地刷新 */
+    private static SearchScreenAccess screen;
     private static List<SearchIndex.Entry> index = List.of();
     /** 待发送的查询（{@code null} = 没有待发的） */
     private static String pendingQuery;
@@ -65,33 +67,60 @@ public final class SearchClientState {
     private SearchClientState() {
     }
 
-    /** 屏幕初始化（大箱子类）时绑定新的搜索框，并要一份目录 */
-    public static void bind(EditBox searchBox) {
+    /**
+     * 屏幕初始化（大箱子类）时绑定新的搜索框，并要一份目录。
+     *
+     * <p><b>两个功能都关着就别握手了</b>：hello/catalog 是搜索与取满共用的前置，
+     * 都关了还发，等于把功能关了却照样留一条流量 —— 那就不是「开关」了。</p>
+     */
+    public static void bind(EditBox searchBox, SearchScreenAccess host) {
         box = searchBox;
+        screen = host;
         index = List.of();
         pendingQuery = null;
         warehouse = false;
-        sendHello();
+        if (SearchConfig.anyFeatureEnabled()) {
+            sendHello();
+        }
     }
 
     /** 屏幕关闭：状态全部作废。服务端那边的过滤跟着菜单一起消失，无需任何清理包 */
     public static void clear() {
         box = null;
+        screen = null;
         index = List.of();
         pendingQuery = null;
         warehouse = false;
     }
 
-    /** 服务端回目录了：建索引、亮出搜索框，把已输入的查询立刻补一次匹配 */
+    /**
+     * 服务端回目录了：建索引、按开关亮出搜索框，把已输入的查询立刻补一次匹配。
+     *
+     * <p>🔴 <b>{@code warehouse} 与「有没有搜索框」必须分开</b>：搜索框关掉、
+     * 但 Ctrl+Alt+左键 还开着的时候，取满手势照样要知道「服务端认过这个界面」，
+     * 而那个判定唯一的来源就是这条 catalog。以前这里 {@code box == null} 直接
+     * return，等于把取满也一起判死 —— 开关拆分之后必须把置位提到前面。</p>
+     */
     public static void onCatalog(List<String> itemIds) {
+        warehouse = true;
+        index = SearchIndex.build(itemIds, SearchCatalogResolver::displayNameOf);
         if (box == null) {
             return;
         }
-        warehouse = true;
-        index = SearchIndex.build(itemIds, SearchCatalogResolver::displayNameOf);
-        box.setVisible(true);
-        if (!box.getValue().isBlank()) {
+        box.setVisible(SearchConfig.isSearchBoxEnabled());
+        if (SearchConfig.isSearchBoxEnabled() && !box.getValue().isBlank()) {
             requestApply(box.getValue());
+        }
+    }
+
+    /**
+     * 让「当前开着的容器界面」按最新配置刷新一次（热键切换后调用）。
+     *
+     * <p>没有界面开着就什么都不做 —— 下次 {@code init} 自然按新配置走。</p>
+     */
+    public static void applyFeatureStateToCurrentScreen() {
+        if (screen != null) {
+            screen.vwsearch$applyFeatureState();
         }
     }
 
@@ -102,7 +131,27 @@ public final class SearchClientState {
 
     /** 搜索框内容变化（responder）：只记下待发查询，真正发送在 tick 里带尾随防抖 */
     public static void onQueryChanged(String query) {
+        // 开关关着时一个字都不往服务端发（清空由 exitSearch 负责，不走这条）
+        if (!SearchConfig.isSearchBoxEnabled()) {
+            return;
+        }
         requestApply(query);
+    }
+
+    /**
+     * 搜索功能被关掉时收尾：<b>撤掉服务端挂着的过滤</b>。
+     *
+     * <p>为什么必须显式发一条空集合，而不是让搜索框「清空输入」自动触发：
+     * 关开关的顺序是「先改配置、再刷界面」，刷界面时 {@link #onQueryChanged}
+     * 已经因为开关关着而短路了 —— 结果就是界面看着没有搜索框，仓库却还卡在
+     * 上一次的过滤结果里，玩家连撤都撤不掉。空集合在服务端就是「清除」
+     * （{@code SearchNetwork#handleApply} 的契约），一条包搞定。</p>
+     */
+    public static void exitSearch() {
+        pendingQuery = null;
+        if (warehouse) {
+            sendApply(List.of());
+        }
     }
 
     /** 每 tick 推进一次尾随防抖（mixin 的 containerTick TAIL 调用） */

@@ -31,6 +31,11 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // 配置先读：后面所有门禁都看它（文件不存在会就地写一份模板）
+        SearchConfig.load();
+        // 两个功能的开关热键（原版按键绑定，玩家可自定义）
+        SearchKeybinds.register();
+
         // C2S ×2：客户端要「发」的 payload，两端都得在 serverbound 表里
         try {
             PayloadTypeRegistry.serverboundPlay().register(
@@ -67,6 +72,15 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
 
         // 断线就清状态（服务端的过滤跟着菜单消失，这里只是别留着旧引用）
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> SearchClientState.clear());
+
+        // 每次进世界重读一次配置：手改过 json 的玩家不用重启游戏，进出一次世界即可生效
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            SearchConfig.load();
+            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={}（{}）",
+                    SearchConfig.isSearchBoxEnabled() ? "开" : "关",
+                    SearchConfig.isFillGestureEnabled() ? "开" : "关",
+                    "config/neko-voidwarehouse-search.json");
+        });
 
         LOGGER.info("[虚空仓库搜索] 客户端通道已就绪（对端没装服务端模组时搜索框自动隐藏）");
     }
