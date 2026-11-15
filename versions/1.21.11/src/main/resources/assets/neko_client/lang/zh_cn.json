@@ -6,6 +6,8 @@
   "neko_client.config.name.openGui": "打开配置界面",
   "neko_client.config.comment.openGui": "打开本模组的配置界面（开关与热键都在里面改）。",
   "neko_client.gui.title": "虚空仓库搜索 · 设置",
+  "neko_client.gui.tab.generic": "通用",
+  "neko_client.gui.tab.hotkeys": "快捷键",
   "neko_client.hotkeys.category": "虚空仓库搜索",
   "message.neko_client.search_on": "虚空仓库 · 搜索框：已开启",
   "message.neko_client.search_off": "虚空仓库 · 搜索框：已关闭",

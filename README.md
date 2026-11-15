@@ -49,8 +49,8 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.1.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.4.1.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.2.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.4.2.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -83,6 +83,18 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面（开关、热键都在里面改） |
 
 🔴 **为什么默认不给键**：`H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车，按下去先触发对方的概率远高于触发我们。空绑定在 malilib 里是合法状态（`allowEmpty=true`），代价只是「第一次要自己绑」。
+
+### 配置界面分了页（0.4.2 起，与 MiniHUD 同款）
+
+界面顶部一排分类按钮，点一下换页；当前页的按钮置灰，跟 MiniHUD / Litematica 的配置界面长得一样（关掉再开还停在原页）。
+
+| 分类 | 里面有什么 |
+| --- | --- |
+| **全部** | 三个条目全列一遍（想一次看全就停在这页） |
+| **通用** | 两个功能开关：搜索框、Ctrl+Alt+左键 取满 |
+| **快捷键** | 纯热键条目（目前只有「打开配置界面」一条） |
+
+🔴 **为什么「快捷键」页只有一条**：两个功能开关是 `ConfigBooleanHotkeyed`，**一行里同时有复选框和按键按钮** —— 它们的热键本来就摆在功能自己那一行上（在「通用」页里就能改）。MiniHUD 也是这么分的：它的 `GENERIC_HOTKEYS` 页只放 `Hotkeys.HOTKEY_LIST`，功能自己的键留在功能页。
 
 - **怎么绑**：进游戏后从 **Mod Menu**（装了的话）或任意 malilib 模组的配置界面右上角下拉框里选「Neko Client」，点热键按钮 → 按下新键（ESC 取消、Delete 清空）。改完点界面随便一处即可，`onSettingsChanged` / 关界面都会立刻存盘；
 - **配置文件**：`config/neko-client.json`（首次启动自动生成，带 `_readme` 注释字段；热键存的是 malilib 的存储串，如 `H`、`LEFT_CONTROL,LEFT_ALT`，空串 = 未绑定）；

@@ -6,6 +6,8 @@
   "neko_client.config.name.openGui": "Open config GUI",
   "neko_client.config.comment.openGui": "Opens this mod's config screen (toggles and hotkeys live there).",
   "neko_client.gui.title": "Void Warehouse Search · Settings",
+  "neko_client.gui.tab.generic": "Generic",
+  "neko_client.gui.tab.hotkeys": "Hotkeys",
   "neko_client.hotkeys.category": "Void Warehouse Search",
   "message.neko_client.search_on": "Void Warehouse · search box: ON",
   "message.neko_client.search_off": "Void Warehouse · search box: OFF",

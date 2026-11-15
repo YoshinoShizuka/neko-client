@@ -84,14 +84,25 @@ public final class SearchConfig implements IConfigHandler {
             "openGui", SearchConfigJson.DEFAULT_KEY_OPEN_GUI, HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
-     * 配置界面里按顺序列出的全部条目。
+     * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
      * （{@code ConfigOptionWrapper.createFor} 要 {@code IConfigBase}，而
-     * {@code IHotkey} 是它的子接口）与 malilib 的热键表
-     * （{@code addHotkeysForCategory} 要 {@code IHotkey}）。两份列表会漂，一份不会。</p>
+     * {@code IHotkey} → {@code IConfigValue} → {@code IConfigBase} 是子接口）与
+     * malilib 的热键表（{@code addHotkeysForCategory} 要 {@code IHotkey}）。</p>
      */
     public static final List<IHotkey> OPTIONS = List.of(SEARCH_BOX, FILL_GESTURE, OPEN_GUI);
+
+    /**
+     * 配置界面「通用」页：两个功能开关。
+     *
+     * <p>它们都是 {@code ConfigBooleanHotkeyed}，一格里同时有复选框和按键按钮 ——
+     * 也就是说<b>功能的热键本来就摆在这一行</b>，不需要在「快捷键」页再列一遍。</p>
+     */
+    public static final List<IHotkey> GUI_FEATURES = List.of(SEARCH_BOX, FILL_GESTURE);
+
+    /** 配置界面「快捷键」页：只放纯热键条目（目前只有「打开配置界面」一条） */
+    public static final List<IHotkey> GUI_HOTKEYS = List.of(OPEN_GUI);
 
     /** 给 malilib 的 {@code ConfigManager} 用（它会自己 new 一个；本类只有静态状态） */
     public SearchConfig() {
