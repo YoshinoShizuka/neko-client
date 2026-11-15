@@ -90,12 +90,13 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             SearchConfig.loadFromFile();
             // 取满组合键一起打出来：「取满没反应」时先看这一行，能立刻分辨
-            // 「组合键没读到」和「读到了但判据不对」
-            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={} 取满组合键={}（{}）",
+            // 「组合键没读到」「组合键读到了但绑的东西用不了」「绑对了但没按对」三件事。
+            // 0.4.3 就是缺了第三段，只能靠猜 —— 这一行不许再删。
+            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={} 取满组合键={}（判定：{}）",
                     SearchConfig.isSearchBoxEnabled() ? "开" : "关",
                     SearchConfig.isFillGestureEnabled() ? "开" : "关",
                     SearchConfig.fillComboDisplay(),
-                    "config/neko-client.json");
+                    SearchConfig.fillComboStatus());
         });
 
         // 🔴 先自检，后说话：不再无条件「已就绪」。四条里只要有一条不归本模组，

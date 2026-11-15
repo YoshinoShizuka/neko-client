@@ -4,8 +4,8 @@ import fi.dy.masa.malilib.config.IConfigHandler;
 import fi.dy.masa.malilib.config.options.ConfigBooleanHotkeyed;
 import fi.dy.masa.malilib.config.options.ConfigHotkey;
 import fi.dy.masa.malilib.hotkeys.IHotkey;
+import fi.dy.masa.malilib.hotkeys.IKeybind;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
-import fi.dy.masa.malilib.hotkeys.KeybindMulti;
 import fi.dy.masa.malilib.hotkeys.KeybindSettings;
 import net.fabricmc.loader.api.FabricLoader;
 import org.apache.commons.lang3.tuple.Pair;
@@ -88,15 +88,15 @@ public final class SearchConfig implements IConfigHandler {
      * 「按住哪些键 + 点哪个鼠标键算取满」。玩家把它清空 = 这个手势彻底关掉
      * （空绑定 ⇒ {@link #isFillComboHeld} 恒 false）。</p>
      *
-     * <h2>🔴 为什么判据不用 malilib 的 {@code isKeybindHeld()} / {@code isPressed()}</h2>
-     * <p>{@code KeybindMulti#isKeybindHeld()} 的实现是
-     * {@code pressed || (allowEmpty && keyCodes.isEmpty())} —— 我们开了
-     * {@code allowEmpty}，所以<b>空绑定时它恒为 true</b>，直接拿来判「按住了组合键」
-     * 会让「清空 = 关掉」变成「清空 = 任何点击都取满」。而 {@code isPressed()} 只反映
-     * <b>按键那一刻</b>的边沿，鼠标点击与它不在同一拍上。所以这里自己逐键比对
-     * （见 {@link #isFillComboHeld(int)}），完全绕开 malilib 的按键簿记。</p>
+     * <h2>🔴 为什么判据不用 malilib 的任何「按着没有」</h2>
+     * <p>0.4.3 用过 {@code KeybindMulti.isKeyDown}，26.3 真机上恒 false（把 SDLK 当
+     * SDL scancode 索引，读到缓冲区外）；{@code isKeybindHeld()} 也一起坏 ——
+     * 它的 {@code pressed} 每帧被 {@code reCheckPressedKeys()} 用同一个坏 API 重算。
+     * 现在修饰键由点击事件自带的掩码回答，推导见 {@link FillCombo} 类注释。
+     * 另外注意 {@code allowEmpty} 开着，{@code isKeybindHeld()} 在<b>空绑定时恒为
+     * true</b>，就算它没坏也不能单独当「按住了组合键」用。</p>
      *
-     * <h2>🔴 为什么一个鼠标键 + 一串键盘键，而不是纯键盘热键</h2>
+     * <h2>🔴 为什么一个鼠标键 + 一串修饰键，而不是纯键盘热键</h2>
      * <p>「取满哪一格」只能由<b>点在哪</b>决定，纯热键没法表达目标格。所以语义是
      * <b>按住组合键 → 左键点那一格</b>，绑定里必须包含一个鼠标键。</p>
      */
@@ -238,17 +238,61 @@ public final class SearchConfig implements IConfigHandler {
     /**
      * 这一下鼠标点击是不是「取满组合键」—— 是就返回 true，调用方据此把点击变成取满。
      *
-     * <p>规则本体在 {@link FillCombo#matches}（纯数据、可单测）；这里只做两件事：
-     * 从 malilib 拿到玩家绑的键码、把「键盘键按着没有」接到
-     * {@code KeybindMulti.isKeyDown}（内部走 GLFW 实时状态，与「这一拍按下了什么」无关）。
-     * <b>为什么不用 malilib 的 isKeybindHeld()</b> 见 {@link FillCombo} 的类注释。</p>
+     * <p>规则本体在 {@link FillCombo#matches}（纯数据、可单测）；这里只负责
+     * 从 malilib 把「玩家绑了哪些键」捞出来，再把它和调用方给的修饰键状态拼起来。</p>
+     *
+     * <h2>🔴 为什么修饰键是<b>入参</b>，而不是在这里自己去问</h2>
+     * <p>0.4.3 在这里调 {@code KeybindMulti.isKeyDown} 逐键问「按着没有」，真机上
+     * <b>一次都没命中且零异常</b>：26.x 的 malilib 把 SDLK（LEFT_CONTROL =
+     * 1073742048）当成 SDL 的 scancode（0..511）去索引键盘状态缓冲区，读到的是
+     * 缓冲区外的一兆字节处，恰好是 0。{@code isKeybindHeld()} 同样不可用
+     * （{@code PRESSED_KEYS} 每帧被同一个坏 API 清理，按住的 Ctrl 会被当成已松开）。
+     * 点击事件自己带着<b>点击那一瞬间</b>的修饰键掩码，那份数据一定是对的 ——
+     * 原版「Shift 点 = 整组快速移动」读的就是它。完整推导见 {@link FillCombo} 类注释。</p>
      *
      * @param mouseButton 原版 {@code MouseButtonEvent#button()}（26.3 是 1 基，其余 0 基）
-     * @return 未绑定（玩家清空了）⇒ 恒 false，手势彻底关闭
+     * @param shift       {@code event.hasShiftDown()}
+     * @param control     {@code event.hasControlDown()}
+     * @param alt         {@code event.hasAltDown()}
+     * @return 组合键不可用（玩家清空了 / 绑了字母键）⇒ 恒 false
      */
-    public static boolean isFillComboHeld(int mouseButton) {
-        return FillCombo.matches(FILL_COMBO.getKeybind().getKeys(), mouseButton,
-                KeybindMulti::isKeyDown);
+    /** 第一次「按着修饰键点击」时打一行判据快照（每次游戏一次，不刷屏） */
+    private static boolean firstModifierClickLogged;
+
+    public static boolean isFillComboHeld(int mouseButton, boolean shift, boolean control, boolean alt) {
+        FillCombo.Combo combo = fillCombo();
+        boolean matched = FillCombo.matches(combo, mouseButton, shift, control, alt);
+        // 「按下去没反应」是最难自查的故障：0.4.3 日志零异常、配置全对、判据却恒 false。
+        // 这里把「点击那一拍」的原话留一行 —— 下次再报失灵，不必再猜是「掩码没读到」
+        // 还是「按钮号对不上」。只挑按着修饰键的那一击打，普通点击不打扰玩家。
+        if (!firstModifierClickLogged && (shift || control || alt)) {
+            firstModifierClickLogged = true;
+            VoidWarehouseSearchClient.LOGGER.info(
+                    "[虚空仓库搜索] 取满判据首击：按钮={} → 键码={} 绑定鼠标键={} "
+                            + "Shift={} Ctrl={} Alt={} 组合键={} 命中={}",
+                    mouseButton, mouseButton - FillCombo.MOUSE_KEY_OFFSET, combo.mouseCode(),
+                    shift, control, alt,
+                    combo.usable() ? "可用" : "不可用：" + combo.problem(), matched);
+        }
+        return matched;
+    }
+
+    /**
+     * 组合键现在能不能用 —— 只给进服那一行日志用。
+     *
+     * <p>为什么要打：玩家报「取满没反应」时，第一件事是分辨「绑定里根本没有鼠标键 /
+     * 绑了字母键所以永远不生效」和「绑对了但没按对」。上一轮就是因为没有这一行，
+     * 只能靠猜。</p>
+     */
+    public static String fillComboStatus() {
+        FillCombo.Combo combo = fillCombo();
+        return combo.usable() ? "可用" : "不可用：" + combo.problem();
+    }
+
+    /** 从 malilib 的 {@code IKeybind} 拿「键码 + 键名」，交给纯判据解析 */
+    private static FillCombo.Combo fillCombo() {
+        IKeybind keybind = FILL_COMBO.getKeybind();
+        return FillCombo.parse(keybind.getKeys(), FillCombo.namesOf(keybind.getKeysDisplayString()));
     }
 
     /**

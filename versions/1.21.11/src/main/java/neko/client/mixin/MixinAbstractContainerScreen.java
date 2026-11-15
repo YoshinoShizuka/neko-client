@@ -219,9 +219,9 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
      * <h2>组合键从哪来</h2>
      * <p>{@code config/neko-client.json} 的 {@code keyFillCombo}，默认
      * {@code LEFT_CONTROL,LEFT_ALT,BUTTON_1}（= 0.4.2 及以前写死的 Ctrl+Alt+左键）。
-     * 判据在 {@link neko.client.SearchConfig#isFillComboHeld(int)}，<b>本类不认识
-     * Ctrl / Alt / 左键里的任何一个</b> —— 玩家绑什么就是什么，本类只负责把
-     * 「实际点下的按钮号」递过去。</p>
+     * 判据在 {@link neko.client.SearchConfig#isFillComboHeld(int, boolean, boolean, boolean)}，
+     * <b>本类不认识 Ctrl / Alt / 左键里的任何一个</b> —— 玩家绑什么就是什么，
+     * 本类只负责把「实际点下的按钮号」+「这一刻的修饰键掩码」递过去。</p>
      *
      * <h2>为什么必须在 HEAD 拦下并 cancel</h2>
      * <p>不 cancel 的话，服务端先按普通左键取 1 个、再收到 fill_request 取一整批 ——
@@ -247,10 +247,13 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         if (!neko.client.SearchConfig.isFillGestureEnabled()) {
             return;
         }
-        // 🔴 组合键判据绝不能写在这里的 hasControlDown() / hasAltDown() 上：那是
-        // 0.4.2 及以前**写死**的 Ctrl+Alt（26.3 的修饰键位还是 0xC0 / 0x300 的怪编码）。
-        // 现在一律问「这一下点击符不符合玩家绑定的组合键」，本类不认识任何具体的键。
-        if (!neko.client.SearchConfig.isFillComboHeld(event.button())) {
+        // 🔴 递过去的是「点击那一瞬间按着哪些修饰键」，不是判据本身。判据（绑了哪些键、
+        // 要不要 Shift/Ctrl/Alt）全在 SearchConfig 那边 —— 本类一旦写出
+        // `hasControlDown() && hasAltDown()` 就又变回 0.4.2 的写死形态了。
+        // 为什么敢信这份掩码：原版「Shift 点击 = 整组快速移动」读的就是它（26.3 的
+        // 位是 0xC0 / 0x300，1.21.11 是另一套，所以只能用语义方法、不能手搓位运算）。
+        if (!neko.client.SearchConfig.isFillComboHeld(event.button(),
+                event.hasShiftDown(), event.hasControlDown(), event.hasAltDown())) {
             return;
         }
         if (!((Object) this.getMenu() instanceof ChestMenu)) {
