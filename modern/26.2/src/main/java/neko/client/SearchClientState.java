@@ -2,7 +2,9 @@ package neko.client;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.components.EditBox;
-import neko.client.fill.FillRequestPayload;
+import neko.voidwarehouse.fill.FillRequestPayload;
+import neko.voidwarehouse.search.SearchApplyPayload;
+import neko.voidwarehouse.search.SearchHelloPayload;
 
 import java.util.List;
 
@@ -35,6 +37,10 @@ import java.util.List;
  * <p>{@code canSend} 为 false（旧服务端没这条通道）⇒ hello 发不出去 ⇒
  * 目录永远不来 ⇒ 搜索框永远 {@code setVisible(false)}，功能整个不存在，
  * 界面上没有任何残迹。</p>
+ *
+ * <p>还有第二层门禁：{@link PayloadChannels#usable} 为 false（这个通道 id 名下登记的是
+ * <b>别人的</b> codec）⇒ 一个字节都不发。那种情况下发送会在编码阶段抛错，而异常落在
+ * netty 线程上 catch 不到，只会表现为<b>断线</b> —— 所以这里宁可直接放弃功能。</p>
  */
 public final class SearchClientState {
 
@@ -196,13 +202,21 @@ public final class SearchClientState {
             return;
         }
         lastHelloSentAt = now;
-        // 旧服务端没这条通道：canSend 为 false，发不出去，搜索框永远不亮 —— 这就是降级
+        // 旧服务端没这条通道：canSend 为 false，发不出去，搜索框永远不亮 —— 这就是降级。
+        // 🔴 还要先过通道归属门禁：撞名的若是别的类，这一发会在编码阶段炸在 netty 线程上，
+        // catch 不到，只会表现为断线。宁可搜索框不出现。
+        if (!PayloadChannels.usable(SearchHelloPayload.TYPE)) {
+            return;
+        }
         if (ClientPlayNetworking.canSend(SearchHelloPayload.TYPE)) {
             ClientPlayNetworking.send(SearchHelloPayload.INSTANCE);
         }
     }
 
     private static void sendApply(List<String> matchedIds) {
+        if (!PayloadChannels.usable(SearchApplyPayload.TYPE)) {
+            return;
+        }
         if (ClientPlayNetworking.canSend(SearchApplyPayload.TYPE)) {
             ClientPlayNetworking.send(new SearchApplyPayload(matchedIds));
         }
@@ -221,6 +235,13 @@ public final class SearchClientState {
      *         让这次点击退回原版语义
      */
     public static boolean sendFill(int slotId) {
+        // 门禁一：通道归属（撞名的是别的类时，这一发会在 netty 线程上炸掉连接）
+        // 门禁二：对端到底收不收（旧服务端 / 纯原版服 —— 这条是正常的「不支持」）
+        // 两条都过不去就返回 false，调用方不取消原版点击 ⇒ 玩家看到的还是「取 1 个」，
+        // 没有残迹也没有报错。
+        if (!PayloadChannels.usable(FillRequestPayload.TYPE)) {
+            return false;
+        }
         if (!ClientPlayNetworking.canSend(FillRequestPayload.TYPE)) {
             return false;
         }

@@ -1,4 +1,4 @@
-package neko.client;
+package neko.voidwarehouse.search;
 
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.FriendlyByteBuf;
@@ -12,13 +12,11 @@ import java.util.List;
 /**
  * 客户端 → 服务端：搜索命中的物品 id 集合（<b>空列表 = 清除过滤</b>）。
  *
- * <p><b>服务端 {@code carpet-Neko-Addition} 里有一份同通道、同字段的对偶类。</b>
- * 0.4.0 起客户端把包名从 {@code neko.voidwarehouse.*} 移到了 {@code neko.client}，
- * 于是两边 FQCN 不再相同（「同名类只加载一份」的隐患也随之消失）——
- * 但<b>通道 id 与 {@code CODEC} 结构必须完全一致</b>
- * （{@code carpet_neko_addition:xxx}、同样的字段顺序与类型），
- * 不一致就会出现「一边编的包另一边解不开」（先例：2026-10-31 restock 通道
- * 双 jar 版本错配的 {@code NoSuchMethodError} 崩溃）。</p>
+ * <p><b>这是 {@code carpet-Neko-Addition} 服务端模组里的类；独立客户端模组
+ * {@code voidwarehouse-search} 里有一份包名类名完全相同的镜像。</b>
+ * 两份必须逐字节等价（字段、{@code CODEC} 结构、限长常量），改一边务必同步改另一边 ——
+ * 同一个 FQCN 在两个 jar 里各一份，Fabric knot 只加载其中一份，
+ * 内容不一致就会出现「一边编的包另一边解不开」。</p>
  *
  * <h2>服务端拿到之后做什么</h2>
  * <p>把 id 解析成 {@code Item}（查不到的<b>静默忽略</b>——客户端和服务端的注册表

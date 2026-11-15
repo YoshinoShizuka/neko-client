@@ -6,7 +6,8 @@
 2. **Ctrl + Alt + 左键：把这一格的物品取出到背包放不下为止**（0.2.0 新增）。常规模式给**纯散货**（一个盒子都不装），潜影盒模式给**满盒**，都是「能装多少装多少」——装多少由服务端按你的真实背包现算，只取仓库里现有的（不走 9 合 1 兑换）。
 3. **两个功能各有独立开关 + 可自定义热键**（0.2.0 起）。开关与热键都由 **malilib** 管（就是 MiniHUD / Litematica 那套）：一行一个「复选框 + 按键按钮」。**热键默认全部留空（未绑定）**，自己到配置界面里绑一个。设置落 `config/neko-client.json`。
 
-> 🔴 **0.4.0 改了名字**：包名 `neko.voidwarehouse.search` → `neko.client`，mod id `neko_voidwarehouse_search` → `neko_client`，产物 `neko-voidwarehouse-search` → `neko-client`。配置文件也跟着变成 `config/neko-client.json`（旧的 `neko-voidwarehouse-search.json` 不再读取），已绑的热键需要在配置界面里重绑一次。通道 id 没变，服务端不需要任何改动。
+> 🔴 **0.4.0 改了名字**（0.4.1 修正了其中一处）：mod id `neko_voidwarehouse_search` → `neko_client`，产物 `neko-voidwarehouse-search` → `neko-client`，配置文件变成 `config/neko-client.json`（旧的 `neko-voidwarehouse-search.json` 不再读取），已绑的热键需要在配置界面里重绑一次。通道 id 没变，服务端不需要任何改动。
+> ⚠️ **0.4.0 有个单人存档必崩的错误，0.4.1 已修**：0.4.0 把四条通道的 payload 类也一起挪进了 `neko.client`，而服务端 mod 里还有一份同名的旧包版本 —— 单人存档两端同进程，注册表里躺着的是**服务端那个类**的 codec，客户端却发自己类的实例，编码时 cast 失败（`Can't encode 'SearchHelloPayload[]', expected 'SearchHelloPayload[]'`，两个类同名不同包，报错看着一模一样）⇒ **一开仓库界面就断线**。0.4.1 把那四个类搬回 `neko.voidwarehouse.*` 并与服务端**逐字节对齐**；改了名字的只有客户端自己的逻辑（索引 / 配置 / 热键 / mixin）。
 
 > 🔴 原版容器的点击协议里**没有修饰键**（`PICKUP / QUICK_MOVE / SWAP / CLONE / THROW / QUICK_CRAFT / PICKUP_ALL` 一个都带不了 Ctrl / Alt），所以这个手势只能在客户端识别，再走专用通道 `carpet_neko_addition:fill_request` 告诉服务端「点的是这一格、意图是填满」。**没装本 mod（或低于 0.2.0）的玩家，这个手势完全不存在**：点击就是原版的「取 1 个」，没有残迹也没有报错。
 
@@ -48,8 +49,8 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.0.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.4.0.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.1.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.4.1.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -128,6 +129,18 @@ mod id `neko_client`，构件名 `neko-client`。五个 Minecraft 版本各一�
 | carpet-Neko-Addition 1.0.16+（对应版本） | 搜索框可用 | 无任何影响 |
 | 其它版本 / 没装 carpet | 搜索框自动隐藏（`canSend` 判定） | 无任何影响 |
 | 客户端没装 malilib | **模组不会加载**（`fabric.mod.json` 里是硬依赖，Fabric 直接弹缺依赖） | — |
+
+### 通道撞名时会发生什么（0.4.1 的护栏）
+
+Fabric 的 payload 注册表按通道 id 严格去重，「谁能编码这个 id」取决于**先注册那一方**塞进去的 codec。所以注册完之后客户端会回头核对一次归属：把这个 id 名下登记的 codec 取出来，跟自己的 `CODEC` **比引用**。
+
+| 局面 | 日志 | 行为 |
+| --- | --- | --- |
+| 专用服务器（两边两个 JVM） | 无 | 自己注册成功，正常 |
+| 单人存档（服务端 mod 先注册同一个类） | `WARN … 已被先注册，归属核对通过` | 正常 —— 单人里这条 WARN 是**常态**，不是错误 |
+| 撞名的是**另一个类**（别的模组占了 id / 两端版本不配套） | `ERROR … 名下登记的不是本模组的 codec` | 该功能**自行关闭**，一个字节都不发；`WARN 通道自检未通过` |
+
+🔴 为什么必须「发之前」拦：这类不匹配引发的异常发生在 **netty 线程**上（编码阶段 cast 失败），`try/catch` 根本碰不到，玩家只会看到断线。所以宁可搜索框不出现、取满手势退回原版「取 1 个」，也不许把客户端踢下线。
 
 ## 许可证
 

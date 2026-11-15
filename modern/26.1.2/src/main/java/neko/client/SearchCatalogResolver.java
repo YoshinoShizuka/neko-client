@@ -4,6 +4,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import neko.voidwarehouse.search.SearchCatalogPayload;
 
 /**
  * 客户端侧的注册表查询：物品 id → 本地化显示名（目录索引入口）。

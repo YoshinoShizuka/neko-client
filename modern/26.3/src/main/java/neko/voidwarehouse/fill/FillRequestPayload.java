@@ -1,4 +1,4 @@
-package neko.client.fill;
+package neko.voidwarehouse.fill;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
