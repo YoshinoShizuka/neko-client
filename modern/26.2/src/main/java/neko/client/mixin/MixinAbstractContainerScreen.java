@@ -253,37 +253,38 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         if (!neko.client.SearchConfig.isFillGestureEnabled()) {
             return;
         }
-        // 🔴 递过去的是「点击那一瞬间按着哪些修饰键」，不是判据本身。判据（绑了哪些键、
-        // 要不要 Shift/Ctrl/Alt、按钮号要不要容错）全在 SearchConfig 那边 ——
+        // 🔴 递过去的是「点击那一瞬间按着哪些修饰键」，不是判据本身。
+        // 判据（绑了哪些键、点的是不是那一个鼠标键、要不要 Shift/Ctrl/Alt）
+        // 全在 SearchConfig 那边，0.4.6 起严格匹配、零回退 ——
         // 本类一旦写出 `hasControlDown() && hasAltDown()` 就又变回 0.4.2 的写死形态了。
         if (!neko.client.SearchConfig.isFillComboHeld(event.button(),
                 event.hasShiftDown(), event.hasControlDown(), event.hasAltDown())) {
             return;
         }
         if (!((Object) this.getMenu() instanceof ChestMenu)) {
-            neko.client.SearchConfig.trace("取满中止：菜单不是 ChestMenu（{}）",
+            neko.client.SearchConfig.audit("取满中止：菜单不是 ChestMenu（{}）",
                     this.getMenu().getClass().getName());
             return;
         }
         boolean warehouse = SearchClientState.isWarehouse();
         if (!warehouse) {
-            neko.client.SearchConfig.trace("取满降级：目录未到 ⇒ 补发 hello、请求照发、不吞这次原版点击");
+            neko.client.SearchConfig.audit("取满降级：目录未到 ⇒ 补发 hello、请求照发、不吞这次原版点击");
             SearchClientState.refreshCatalog();
         }
         Slot slot = voidwarehouseSearch$slotAt(event);
         if (slot == null) {
-            neko.client.SearchConfig.trace("取满中止：点击坐标 ({}, {}) 没落在 0..{} 的内容格上",
+            neko.client.SearchConfig.audit("取满中止：点击坐标 ({}, {}) 没落在 0..{} 的内容格上",
                     event.x(), event.y(), CONTENT_SLOTS);
             return;
         }
         if (slot.getItem().isEmpty()) {
-            neko.client.SearchConfig.trace("取满中止：第 {} 格是空的", slot.index);
+            neko.client.SearchConfig.audit("取满中止：第 {} 格是空的", slot.index);
             return;
         }
         if (!SearchClientState.sendFill(slot.index)) {
             return;
         }
-        neko.client.SearchConfig.trace("取满链路：slot={} 目录={} ⇒ {}原版点击",
+        neko.client.SearchConfig.audit("取满链路：slot={} 目录={} ⇒ {}原版点击",
                 slot.index, warehouse ? "已到" : "未到", warehouse ? "吞掉" : "放行");
         if (!warehouse) {
             return;

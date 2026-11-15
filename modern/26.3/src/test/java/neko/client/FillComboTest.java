@@ -21,19 +21,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 逻辑，没测到「那个 API 在 26.3 上到底有没有用」</b>。现在键盘那半边收窄成
  * 三个布尔值（由点击事件自带的掩码给出），喂进来的就是调用方真正会拿到的东西。</p>
  *
+ * <p><b>0.4.5 又交了一次学费</b>：那一版的 D 组单测把「绑左键、点右键也要命中」当成
+ * 正确行为写死，于是单测 / jar 断言 / 真机取货全绿，玩家却报「实际生效的是右键」。
+ * <b>功能可用性与语义正确性必须分开验</b>。D 组现已整组反过来：真机样本
+ * 「绑 {@code -99} + 按住 Ctrl+Alt + {@code 按钮=3(-97)}」必须 <b>false</b>。</p>
+ *
  * <p>键码约定（malilib）：鼠标键 = {@code 原版按钮号 - 100}，所以 26.3 左键
- * {@code 1-100=-99}、其余版本左键 {@code 0-100=-100}；两个版本都要认。</p>
+ * {@code 1-100=-99}、右键 {@code 3-100=-97}；其余版本左键 {@code 0-100=-100}、
+ * 右键 {@code 1-100=-99}。配置里存的是键名，由各版本 malilib 自己解析，
+ * 所以精确匹配跨版本自洽。</p>
  */
 class FillComboTest {
 
-    /** 键码只用来判「是不是鼠标键」（负数），具体数值不影响判据 —— 这里只用两种版本的左键 */
+    /** 26.3 的鼠标键码（javap 真机 malilib 0.30.2 实证）：左 -99 / 中 -98 / 右 -97 */
     private static final int MOUSE_LEFT_263 = 1 - 100;
+    private static final int MOUSE_MIDDLE_263 = 2 - 100;
+    private static final int MOUSE_RIGHT_263 = 3 - 100;
+    /** 0 基版本（26.2 / 26.1.x / 1.21.11）：左 -100 / 右 -99 */
     private static final int MOUSE_LEFT_OLD = 0 - 100;
+    private static final int MOUSE_RIGHT_OLD = 1 - 100;
 
     /** 26.3 的点击按钮号（1 基）/ 26.2 及更早（0 基） */
     private static final int BTN_LEFT_263 = 1;
-    private static final int BTN_LEFT_OLD = 0;
+    private static final int BTN_MIDDLE_263 = 2;
     private static final int BTN_RIGHT_263 = 3;
+    private static final int BTN_LEFT_OLD = 0;
+    private static final int BTN_RIGHT_OLD = 1;
 
     /** 键盘键码只要有「非负」这个性质就够了，判据不认具体值 */
     private static final int ANY_KEY = 340;
@@ -194,56 +207,98 @@ class FillComboTest {
                 () -> assertTrue(FillCombo.matches(bare, BTN_LEFT_263, true, true, true)));
     }
 
-    // ------------------------------------------------------------ D 组：按钮号容错
+    // ------------------------------------------------------------ D 组：严格匹配（0.4.6）
+
+    private static final List<String> CTRL_ALT_RIGHT =
+            List.of("LEFT_CONTROL", "LEFT_ALT", "MOUSE_RIGHT");
+
+    private static FillCombo.Combo ctrlAltRight() {
+        return FillCombo.parse(List.of(ANY_KEY, ANY_KEY + 1, MOUSE_RIGHT_263), CTRL_ALT_RIGHT);
+    }
 
     @Test
-    @DisplayName("D1 真机复现：绑 -99、按住 Ctrl+Alt 却报按钮=3(-97) ⇒ 容错命中")
-    void toleranceCoversTheRealLogSample() {
+    @DisplayName("D1 🔴 真机 0.4.5 回归：绑左键 -99、Ctrl+Alt+右键(3/-97) 必须不命中")
+    void boundLeftNeverMatchesRightClick() {
         assertAll(
                 () -> assertFalse(FillCombo.matches(ctrlAltLeft(), BTN_RIGHT_263, false, true, true),
-                        "精确判据仍然要把这次点右键判否 —— 容错不能污染精确路径"),
-                () -> assertTrue(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263,
-                        false, true, true), "0.4.4 日志里唯一那一击必须被救回来"));
+                        "0.4.5 就是靠 ±2 容错把这一击放行的 ⇒ 玩家报『实际生效的是 Ctrl+Alt+右键』"),
+                () -> assertTrue(FillCombo.matches(ctrlAltLeft(), BTN_LEFT_263, false, true, true),
+                        "同一份绑定下唯一该命中的是左键"),
+                () -> assertEquals(-99, MOUSE_LEFT_263, "26.3 MOUSE_LEFT"),
+                () -> assertEquals(-98, MOUSE_MIDDLE_263, "26.3 MOUSE_MIDDLE"),
+                () -> assertEquals(-97, MOUSE_RIGHT_263, "26.3 MOUSE_RIGHT = BUTTON_2"));
     }
 
     @Test
-    @DisplayName("D2 0 基 / 1 基版本互串（键码差 1）也在容差内")
-    void toleranceCoversVersionOffset() {
-        FillCombo.Combo oldBound = FillCombo.parse(
+    @DisplayName("D2 想用右键就显式绑右键：绑 -97 时右键命中，左键 / 中键都不命中")
+    void explicitRightBindingWorks() {
+        FillCombo.Combo right = ctrlAltRight();
+        assertAll(
+                () -> assertTrue(right.usable(), () -> "显式绑右键必须可用，实际：" + right.problem()),
+                () -> assertEquals(MOUSE_RIGHT_263, right.mouseCode()),
+                () -> assertTrue(FillCombo.matches(right, BTN_RIGHT_263, false, true, true),
+                        "显式绑 BUTTON_2 / MOUSE_RIGHT 后，Ctrl+Alt+右键就该取满"),
+                () -> assertFalse(FillCombo.matches(right, BTN_LEFT_263, false, true, true),
+                        "显式绑右键后左键不该再触发"),
+                () -> assertFalse(FillCombo.matches(right, BTN_MIDDLE_263, false, true, true),
+                        "中键也不该触发"));
+    }
+
+    @Test
+    @DisplayName("D3 0 基 / 1 基版本差不许靠容错互串（配置存键名，码值由各版本 malilib 解析）")
+    void versionOffsetDoesNotCrossMatch() {
+        FillCombo.Combo oldLeft = FillCombo.parse(
                 List.of(ANY_KEY, ANY_KEY + 1, MOUSE_LEFT_OLD), CTRL_ALT_LEFT);
+        FillCombo.Combo oldRight = FillCombo.parse(
+                List.of(ANY_KEY, ANY_KEY + 1, MOUSE_RIGHT_OLD), CTRL_ALT_RIGHT);
         assertAll(
-                () -> assertTrue(FillCombo.matchesTolerantMouse(oldBound, BTN_LEFT_263, false, true, true)),
-                () -> assertTrue(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_LEFT_OLD, false, true, true)));
+                () -> assertTrue(FillCombo.matches(oldLeft, BTN_LEFT_OLD, false, true, true),
+                        "0 基版本：BUTTON_1(-100) + 按钮 0 必须命中"),
+                () -> assertTrue(FillCombo.matches(oldRight, BTN_RIGHT_OLD, false, true, true),
+                        "0 基版本：BUTTON_2(-99) + 按钮 1 必须命中"),
+                () -> assertFalse(FillCombo.matches(oldLeft, BTN_LEFT_263, false, true, true),
+                        "旧版绑 -100 却点出 -99 ⇒ 必须判否（版本差由键名解析消掉，不靠放宽）"),
+                () -> assertFalse(FillCombo.matches(ctrlAltLeft(), BTN_LEFT_OLD, false, true, true),
+                        "26.3 绑 -99 却点出 -100 ⇒ 必须判否"));
     }
 
     @Test
-    @DisplayName("D3 少按一个修饰键 ⇒ 容错也不许命中（否则单按 Ctrl 点一下就取满）")
-    void toleranceStillRequiresEveryBoundModifier() {
-        assertAll(
-                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263, false, true, false)),
-                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263, false, false, true)),
-                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263, false, false, false)));
-    }
-
-    @Test
-    @DisplayName("D4 裸鼠标键绑定不许走容错（否则每次点击、包括侧键都被吞掉）")
-    void toleranceRejectsBareMouseBinding() {
+    @DisplayName("D4 裸鼠标键绑定同样严格：只认那一个按钮")
+    void bareMouseBindingIsStrict() {
         FillCombo.Combo bare = FillCombo.parse(List.of(MOUSE_LEFT_263), List.of("MOUSE_LEFT"));
         assertAll(
-                () -> assertFalse(bare.hasModifiers()),
-                () -> assertFalse(FillCombo.matchesTolerantMouse(bare, BTN_RIGHT_263, true, true, true)),
-                () -> assertFalse(FillCombo.matchesTolerantMouse(bare, BTN_RIGHT_263, false, false, false)));
+                () -> assertTrue(bare.usable()),
+                () -> assertTrue(FillCombo.matches(bare, BTN_LEFT_263, false, false, false)),
+                () -> assertFalse(FillCombo.matches(bare, BTN_RIGHT_263, true, true, true),
+                        "只绑左键时，按住全部修饰键点右键也不许取满"));
     }
 
     @Test
-    @DisplayName("D5 侧键（键码差 >2）与不可用 / null 组合键一律不许容错")
-    void toleranceIsBounded() {
+    @DisplayName("D5 侧键 / 中键 / 不可用 / null 组合键一律不命中")
+    void unusableAndSideButtonsNeverMatch() {
         FillCombo.Combo broken = FillCombo.parse(
                 List.of(ANY_KEY, MOUSE_LEFT_263), List.of("KEY_A", "MOUSE_LEFT"));
-        int sideButton = 8;   // -92，与 -99 差 7
         assertAll(
-                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), sideButton, false, true, true)),
-                () -> assertFalse(FillCombo.matchesTolerantMouse(broken, BTN_RIGHT_263, false, true, true)),
-                () -> assertFalse(FillCombo.matchesTolerantMouse(null, BTN_RIGHT_263, false, true, true)));
+                () -> assertFalse(FillCombo.matches(ctrlAltLeft(), BTN_MIDDLE_263, false, true, true),
+                        "中键(2→-98) 不许命中"),
+                () -> assertFalse(FillCombo.matches(ctrlAltLeft(), 8, false, true, true),
+                        "侧键(8→-92) 不许命中"),
+                () -> assertFalse(FillCombo.matches(broken, BTN_LEFT_263, false, true, true)),
+                () -> assertFalse(FillCombo.matches(null, BTN_LEFT_263, false, true, true)));
+    }
+
+    @Test
+    @DisplayName("D6 修饰键子判据：少按判否、多按放行、不可用/null 恒否（日志据此分原因）")
+    void modifiersMatchIsPrecise() {
+        assertAll(
+                () -> assertTrue(FillCombo.modifiersMatch(ctrlAltLeft(), false, true, true)),
+                () -> assertTrue(FillCombo.modifiersMatch(ctrlAltLeft(), true, true, true),
+                        "多按没绑的 Shift 不算错（allowExtraKeys）"),
+                () -> assertFalse(FillCombo.modifiersMatch(ctrlAltLeft(), false, true, false)),
+                () -> assertFalse(FillCombo.modifiersMatch(ctrlAltLeft(), false, false, true)),
+                () -> assertFalse(FillCombo.modifiersMatch(ctrlAltLeft(), false, false, false)),
+                () -> assertFalse(FillCombo.modifiersMatch(null, true, true, true)),
+                () -> assertFalse(FillCombo.modifiersMatch(
+                        FillCombo.parse(List.of(), List.of()), true, true, true)));
     }
 }

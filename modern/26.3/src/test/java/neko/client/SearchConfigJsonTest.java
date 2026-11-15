@@ -144,7 +144,12 @@ class SearchConfigJsonTest {
         assertAll(
                 () -> assertTrue(text.contains("\"_readme\""), "缺 _readme"),
                 () -> assertTrue(text.contains("\"_readme_keys\""), "缺 _readme_keys"),
+                () -> assertTrue(text.contains("\"_readme_fillCombo\""), "缺 _readme_fillCombo"),
                 () -> assertTrue(text.contains("热键"), "_readme_keys 里要写清热键去哪改"),
+                // 0.4.6：玩家手改 json 时必须能看到「想用右键该写哪个键」，否则又会
+                // 出现「绑左键、实际右键生效」这类说不清的误解
+                () -> assertTrue(text.contains("BUTTON_2") && text.contains("不会触发"),
+                        "_readme_fillCombo 里要写清右键该绑 BUTTON_2、且左键绑定不会让右键触发"),
                 () -> assertTrue(text.contains("配置文件") || text.contains("重进一次世界"),
                         "_readme 里要写清改完什么时候生效"),
                 () -> assertTrue(text.startsWith("{"), "落盘文本不能有空行开头"),

@@ -47,28 +47,41 @@ import java.util.List;
  * 时传的也是 {@code true}）：绑 Ctrl+左键，按 Ctrl+Shift+左键照样取满。
  * 反过来<b>少按</b>一个绑定的修饰键一定不算。</p>
  *
+ * <h2>🔴🔴 0.4.5 的事故：绝不许给按钮号加「容错」</h2>
+ * <p>0.4.5 为了让 0.4.4 日志里那一击（{@code 按钮=3 → 键码=-97}，绑定 {@code -99}）
+ * 能生效，加了一条「键码差 ≤2 就算命中」的隐性容错。真机上它确实让取满跑通了：
+ * 日志里连续十几次 {@code 已取出 …} 都跟着「命中（按钮号容错 ±2）」。
+ * <b>但功能能用 ≠ 语义正确</b> —— 玩家绑的是 Ctrl+Alt+左键，真正生效的却大面积是
+ * Ctrl+Alt+<b>右键</b>。玩家反馈的原话：「实际生效的不是 Ctrl+Alt+左键 而是
+ * Ctrl+Alt+右键」。「组合键由玩家自定义」被退化成「修饰键按全、点哪个键都行」。</p>
+ * <p>0.4.6 起只有一条判据：{@link #matches} —— <b>绑什么键就是什么键</b>。
+ * 想用右键就把鼠标键显式绑成 {@code BUTTON_2}（26.3 也可以写 {@code MOUSE_RIGHT}）；
+ * 没有任何隐性放宽。判据日志会对「按钮号对不上」直接说出点的是哪个码、绑的是哪个码，
+ * 而不是静默判否。这条教训已固化进 D 组单测与 jar 级负向断言。</p>
+ *
+ * <h2>🔴 为什么精确匹配不会踩 0 基 / 1 基版本差</h2>
+ * <p>配置里存的是<b>键名</b>（{@code BUTTON_1} / {@code MOUSE_LEFT}），不是数字。
+ * {@code getKeys()} 由<b>当前版本的 malilib</b> 把名字解析成该版本的码值：</p>
+ * <ul>
+ *   <li>26.3（SDL，按钮号 1 基）：{@code MOUSE_LEFT=-99}、{@code MOUSE_MIDDLE=-98}、
+ *       {@code MOUSE_RIGHT=-97}；别名 {@code BUTTON_1=-99}、{@code BUTTON_2=-97}、
+ *       {@code BUTTON_3=-98}（javap 真机 0.30.2 实证）；</li>
+ *   <li>26.2 / 26.1.x / 1.21.11（0 基）：{@code MOUSE_BUTTON_1=-100}、
+ *       {@code MOUSE_BUTTON_2=-99}、{@code MOUSE_BUTTON_3=-98}。</li>
+ * </ul>
+ * <p>点击事件用的也是同一版本的按钮号，所以同一份配置在五个版本都自洽 ——
+ * <b>版本差不需要、也不许用容错去抹平</b>。</p>
+ *
  * <h2>🔴 鼠标键 = 原版按钮号 - 100（负数），键盘键非负</h2>
  * <p>这不是我编的换算，而是 malilib 自己在「玩家绑键」时用的同一条公式
  * （{@code ConfigButtonKeybind} 里 {@code addKey(input() - 100)}）—— 所以两边必然对得上。
- * 而「原版按钮号」26.3 是 1 基（左=1、中=2、右=3）、26.2 及更早是 0 基（左=0、右=1、中=2）：
- * 算出来的左键分别是 {@code -99} 和 {@code -100}，<b>正好等于各自版本 malilib 的
- * 鼠标左键码</b>。版本差异在这里自己消掉了，一份源码五个版本通用。</p>
+ * 26.3 左键 {@code 1-100=-99}、右键 {@code 3-100=-97}；旧版左键 {@code 0-100=-100}、
+ * 右键 {@code 1-100=-99}。各自都与本版本 malilib 的鼠标键码对齐。</p>
  */
 final class FillCombo {
 
     /** malilib 的鼠标键编码偏移：{@code 键码 = 原版按钮号 - 100}。推论：负数 = 鼠标键。 */
     static final int MOUSE_KEY_OFFSET = 100;
-
-    /**
-     * 按钮号容错范围（键码差）。
-     *
-     * <p>覆盖的全部现实差异：26.3 是 1 基（左 1→-99、右 3→-97）、26.2 及更早是 0 基
-     * （左 0→-100、右 1→-99）；同一个「左键」最多差 1，左↔右最多差 2。
-     * 第 4/5 个侧键（键码 -96 / -95）差到 3 以上，仍然挡在外面 —— 容错不是
-     * 「随便点哪个键都算」。真机 0.4.4 日志里就抓到过一次「按住 Ctrl+Alt 点下去、
-     * 按钮号却是 3（右键）」的样本，绑的左键 -99 因此被精确判据判否。</p>
-     */
-    static final int MOUSE_BUTTON_TOLERANCE = 2;
 
     private FillCombo() {
     }
@@ -89,11 +102,6 @@ final class FillCombo {
 
         boolean usable() {
             return this.problem == null;
-        }
-
-        /** 绑了至少一个修饰键 —— 只有这种情况下才允许按钮号容错（见 {@link #matchesTolerantMouse}） */
-        boolean hasModifiers() {
-            return this.shift || this.control || this.alt;
         }
     }
 
@@ -134,7 +142,7 @@ final class FillCombo {
     /**
      * 把 malilib 的显示串拆成键名列表：{@code "LEFT_CONTROL,LEFT_ALT,BUTTON_1"} 在界面上
      * 显示成 {@code "LEFT_CONTROL + LEFT_ALT + MOUSE_LEFT"}（{@code getKeysDisplayString()}
-     * 就是 {@code getStringValue().replace(",", " + ")}，javap 实证）。
+     * 就是 {@code getStringValue().replaceAll(",", " + ")}，javap 实证）。
      *
      * @return 空绑定 ⇒ 空列表
      */
@@ -193,7 +201,29 @@ final class FillCombo {
     }
 
     /**
-     * 这一下点击算不算「取满组合键」。
+     * 绑定的修饰键在这一击里是不是按全了。
+     *
+     * <p>单独抽出来是为了让判据日志能分清「按钮号对不上」和「修饰键没按全」——
+     * 这两件事给玩家的提示完全不同：前者该改绑定，后者该改按法。</p>
+     *
+     * <p>绑了就必须要按着；没绑的不要求（多按了也不算错，同 malilib 的
+     * {@code allowExtraKeys}）。</p>
+     */
+    static boolean modifiersMatch(Combo combo, boolean shift, boolean control, boolean alt) {
+        if (combo == null || !combo.usable()) {
+            return false;
+        }
+        return (!combo.shift() || shift)
+                && (!combo.control() || control)
+                && (!combo.alt() || alt);
+    }
+
+    /**
+     * 这一下点击算不算「取满组合键」——<b>唯一判据，严格匹配</b>。
+     *
+     * <p>鼠标键必须<b>逐位相等</b>：{@code 绑定键码 == 原版按钮号 - 100}。
+     * 0.4.5 曾在这里挂过一条「差 ≤2 也算」的容错回退，结果是绑左键、右键生效；
+     * 详见类注释 0.4.5 事故段。<b>不许再加任何形式的按钮号放宽</b>。</p>
      *
      * @param mouseButton 原版 {@code MouseButtonEvent#button()}（26.3 是 1 基，其余 0 基）
      * @param shift       {@code event.hasShiftDown()}
@@ -207,45 +237,7 @@ final class FillCombo {
         if (combo.mouseCode() != mouseButton - MOUSE_KEY_OFFSET) {
             return false;
         }
-        // 绑了就必须要按着；没绑的不要求（多按了也不算错，同 allowExtraKeys）
-        return (!combo.shift() || shift)
-                && (!combo.control() || control)
-                && (!combo.alt() || alt);
-    }
-
-    /**
-     * <b>按钮号容错</b>：修饰键全部按着、且点下的是「同一族鼠标键」时算命中，
-     * 不追究按钮号与绑定键码是否逐位相等。
-     *
-     * <h2>为什么需要这条</h2>
-     * <p>0.4.4 真机日志只抓到一击：{@code 按钮=3 → 键码=-97}，而绑定的是
-     * {@code MOUSE_LEFT=-99}，精确判据判否，玩家看到的就是「按了没反应」。
-     * 按钮号来自 {@code SDL_MouseButtonEvent.button()}（javap 实证一路直传，
-     * 没有任何变换），它在不同 MC 版本是 0 基 / 1 基、在不同鼠标 / 驱动上还可能
-     * 把主键报成另一个号。<b>把「哪一下点击算取满」押在这个数上，就是把功能
-     * 押在玩家的外设上</b> —— 而组合键里真正表达「我刻意要取满」的，是按住的
-     * 那几个修饰键，不是按钮号。</p>
-     *
-     * <h2>为什么要求至少绑一个修饰键</h2>
-     * <p>玩家把组合键清空成「只有左键」时，容错会把<b>每一次点击</b>（含右键、
-     * 侧键）都判成取满，普通箱子界面会被整片吞掉。所以裸鼠标键绑定仍然走
-     * {@link #matches} 的精确判据，容错只对「按住 Ctrl/Alt/Shift 再点」开放。</p>
-     *
-     * <p>容错范围 {@link #MOUSE_BUTTON_TOLERANCE} 只放宽到 ±2，侧键以外的
-     * 常规按钮族最多就这么大；再远一律不算。命中时调用方必须打日志说明
-     * 「这次是容错命中的」，绝不静默改语义。</p>
-     */
-    static boolean matchesTolerantMouse(Combo combo, int mouseButton,
-                                        boolean shift, boolean control, boolean alt) {
-        if (combo == null || !combo.usable() || !combo.hasModifiers()) {
-            return false;
-        }
-        if (Math.abs((mouseButton - MOUSE_KEY_OFFSET) - combo.mouseCode()) > MOUSE_BUTTON_TOLERANCE) {
-            return false;
-        }
-        return (!combo.shift() || shift)
-                && (!combo.control() || control)
-                && (!combo.alt() || alt);
+        return modifiersMatch(combo, shift, control, alt);
     }
 
     private static Combo problem(String text) {

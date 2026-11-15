@@ -235,29 +235,10 @@ public final class SearchConfig implements IConfigHandler {
         return text.isEmpty() ? "未绑定" : text;
     }
 
+    // ------------------------------------------------------------------ 诊断日志
+
     /**
-     * 这一下鼠标点击是不是「取满组合键」—— 是就返回 true，调用方据此把点击变成取满。
-     *
-     * <p>规则本体在 {@link FillCombo#matches}（纯数据、可单测）；这里只负责
-     * 从 malilib 把「玩家绑了哪些键」捞出来，再把它和调用方给的修饰键状态拼起来。</p>
-     *
-     * <h2>🔴 为什么修饰键是<b>入参</b>，而不是在这里自己去问</h2>
-     * <p>0.4.3 在这里调 {@code KeybindMulti.isKeyDown} 逐键问「按着没有」，真机上
-     * <b>一次都没命中且零异常</b>：26.x 的 malilib 把 SDLK（LEFT_CONTROL =
-     * 1073742048）当成 SDL 的 scancode（0..511）去索引键盘状态缓冲区，读到的是
-     * 缓冲区外的一兆字节处，恰好是 0。{@code isKeybindHeld()} 同样不可用
-     * （{@code PRESSED_KEYS} 每帧被同一个坏 API 清理，按住的 Ctrl 会被当成已松开）。
-     * 点击事件自己带着<b>点击那一瞬间</b>的修饰键掩码，那份数据一定是对的 ——
-     * 原版「Shift 点 = 整组快速移动」读的就是它。完整推导见 {@link FillCombo} 类注释。</p>
-     *
-     * @param mouseButton 原版 {@code MouseButtonEvent#button()}（26.3 是 1 基，其余 0 基）
-     * @param shift       {@code event.hasShiftDown()}
-     * @param control     {@code event.hasControlDown()}
-     * @param alt         {@code event.hasAltDown()}
-     * @return 组合键不可用（玩家清空了 / 绑了字母键）⇒ 恒 false
-     */
-    /**
-     * 诊断日志：前 40 行全打，之后每秒最多一行。
+     * 判据 / 状态类日志：前 40 行全打，之后每秒最多一行。
      *
      * <p>0.4.4 的「首击只打一次」是个设计错误：真机上那一击抓到的是右键，
      * 之后玩家真正按的 Ctrl+Alt+左键一个字都没留下，日志看起来「模组没反应」，
@@ -277,25 +258,81 @@ public final class SearchConfig implements IConfigHandler {
         VoidWarehouseSearchClient.LOGGER.info("[虚空仓库搜索] " + format, args);
     }
 
+    /**
+     * <b>链路结果</b>日志：与 {@link #trace} <b>各用一份预算</b>。
+     *
+     * <p>0.4.5 真机上出现过「判据命中了、`已取出` 也出来了，但 `取满发包成功`
+     * 那行没打」—— 因为整条链路共用一个 40 行 burst + 1/s 限流，判据行把
+     * 结果行挤掉了。<b>日志分级不分开，等于关键结果随时会消失</b>，排障时
+     * 又只能靠猜。发包成功 / 失败、中止原因、链路结果一律走这里。</p>
+     */
+    private static int auditCount;
+    private static long lastAuditAt;
+
+    public static void audit(String format, Object... args) {
+        long now = System.currentTimeMillis();
+        if (auditCount >= 200 && now - lastAuditAt < 1000L) {
+            return;
+        }
+        auditCount++;
+        lastAuditAt = now;
+        VoidWarehouseSearchClient.LOGGER.info("[虚空仓库搜索] " + format, args);
+    }
+
+    /**
+     * 这一下鼠标点击是不是「取满组合键」—— 是就返回 true，调用方据此把点击变成取满。
+     *
+     * <p>规则本体在 {@link FillCombo#matches}（纯数据、可单测）；这里只负责
+     * 从 malilib 把「玩家绑了哪些键」捞出来，再把它和调用方给的修饰键状态拼起来。</p>
+     *
+     * <h2>🔴 0.4.6：绑什么键就是什么键</h2>
+     * <p>0.4.5 在精确判否之后还挂了一条「按钮号差 ≤2 也算」的容错回退，
+     * 真机上玩家绑 Ctrl+Alt+左键，却大面积被 Ctrl+Alt+右键取满。这里已<b>完全删除</b>：
+     * 只有 {@code FillCombo.matches}，一条判据、零回退。想用右键就把
+     * {@code keyFillCombo} 的鼠标键显式改成 {@code BUTTON_2} / {@code MOUSE_RIGHT}。</p>
+     *
+     * <h2>🔴 为什么「未命中」要写出原因</h2>
+     * <p>按钮号不符与修饰键没按全，给玩家的提示完全不同：前者该改绑定，后者该改按法。
+     * 日志会直接写「点的是键码 X，绑定的是 Y」，不再让玩家对着一个 `false` 猜。</p>
+     *
+     * <h2>🔴 为什么修饰键是<b>入参</b>，而不是在这里自己去问</h2>
+     * <p>0.4.3 在这里调 {@code KeybindMulti.isKeyDown} 逐键问「按着没有」，真机上
+     * <b>一次都没命中且零异常</b>：26.x 的 malilib 把 SDLK（LEFT_CONTROL =
+     * 1073742048）当成 SDL 的 scancode（0..511）去索引键盘状态缓冲区，读到的是
+     * 缓冲区外的一兆字节处，恰好是 0。{@code isKeybindHeld()} 同样不可用
+     * （{@code PRESSED_KEYS} 每帧被同一个坏 API 清理，按住的 Ctrl 会被当成已松开）。
+     * 点击事件自己带着<b>点击那一瞬间</b>的修饰键掩码，那份数据一定是对的 ——
+     * 原版「Shift 点 = 整组快速移动」读的就是它。完整推导见 {@link FillCombo} 类注释。</p>
+     *
+     * @param mouseButton 原版 {@code MouseButtonEvent#button()}（26.3 是 1 基，其余 0 基）
+     * @param shift       {@code event.hasShiftDown()}
+     * @param control     {@code event.hasControlDown()}
+     * @param alt         {@code event.hasAltDown()}
+     * @return 组合键不可用（玩家清空了 / 绑了字母键）⇒ 恒 false
+     */
     public static boolean isFillComboHeld(int mouseButton, boolean shift, boolean control, boolean alt) {
         FillCombo.Combo combo = fillCombo();
-        boolean exact = FillCombo.matches(combo, mouseButton, shift, control, alt);
-        // 精确判否时再走一次按钮号容错：修饰键全按着、点的是同一族鼠标键就算命中。
-        // 0.4.4 真机日志里唯一那一击是「按钮=3 / 键码=-97」而绑定 -99，精确判据把它丢了。
-        boolean tolerant = !exact
-                && FillCombo.matchesTolerantMouse(combo, mouseButton, shift, control, alt);
-        boolean matched = exact || tolerant;
-        // 带修饰键的点击、或者已经命中的点击，都留一行原话。玩家报「按了没反应」时
-        // 一眼能分清「根本没进判据」「按钮号对不上」「判据命中但后面卡住了」。
+        // 🔴 唯一判据。任何「精确判否就再放宽一次」的回退都不许回来 —— 见 0.4.5 事故。
+        boolean matched = FillCombo.matches(combo, mouseButton, shift, control, alt);
+        // 带修饰键的点击、或者已经命中的点击，都留一行原话。
         if ((shift || control || alt) || matched) {
-            trace("取满判据：按钮={} → 键码={} 绑定鼠标键={} Shift={} Ctrl={} Alt={} "
-                            + "组合键={} ⇒ {}",
-                    mouseButton, mouseButton - FillCombo.MOUSE_KEY_OFFSET, combo.mouseCode(),
-                    shift, control, alt,
+            int clickedCode = mouseButton - FillCombo.MOUSE_KEY_OFFSET;
+            String verdict;
+            if (!combo.usable()) {
+                verdict = "未命中：组合键不可用（" + combo.problem() + "）";
+            } else if (combo.mouseCode() != clickedCode) {
+                verdict = "未命中：点的是键码 " + clickedCode + "，绑定的是 " + combo.mouseCode()
+                        + "（绑什么键就是什么键；想用这一击请把 keyFillCombo 的鼠标键改成对应的 BUTTON_n）";
+            } else if (!FillCombo.modifiersMatch(combo, shift, control, alt)) {
+                verdict = "未命中：绑定的修饰键没按全";
+            } else {
+                verdict = "命中（精确）";
+            }
+            trace("取满判据：按钮={} → 键码={} 绑定鼠标键={} 组合键={}（{}） "
+                            + "Shift={} Ctrl={} Alt={} ⇒ {}",
+                    mouseButton, clickedCode, combo.mouseCode(), fillComboDisplay(),
                     combo.usable() ? "可用" : "不可用：" + combo.problem(),
-                    exact ? "命中（精确）"
-                            : tolerant ? "命中（按钮号容错 ±" + FillCombo.MOUSE_BUTTON_TOLERANCE + "）"
-                            : "未命中");
+                    shift, control, alt, verdict);
         }
         return matched;
     }

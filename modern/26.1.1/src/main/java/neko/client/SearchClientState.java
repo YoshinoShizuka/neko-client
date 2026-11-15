@@ -262,16 +262,18 @@ public final class SearchClientState {
         // 门禁二：对端到底收不收（旧服务端 / 纯原版服 —— 这条是正常的「不支持」）
         // 两条都过不去就返回 false，调用方不取消原版点击 ⇒ 玩家看到的还是「取 1 个」，
         // 没有残迹也没有报错。
+        // 结果日志走 audit（独立预算）：0.4.5 真机上判据行把「取满发包成功」挤掉过，
+        // 于是「明明取到货了、日志却看不到发包」——分级不分开，关键结果随时会消失。
         if (!PayloadChannels.usable(FillRequestPayload.TYPE)) {
-            SearchConfig.trace("取满发包失败：fill_request 通道归属门禁没过");
+            SearchConfig.audit("取满发包失败：fill_request 通道归属门禁没过");
             return false;
         }
         if (!ClientPlayNetworking.canSend(FillRequestPayload.TYPE)) {
-            SearchConfig.trace("取满发包失败：对端不收 fill_request（canSend=false）");
+            SearchConfig.audit("取满发包失败：对端不收 fill_request（canSend=false）");
             return false;
         }
         ClientPlayNetworking.send(new FillRequestPayload(slotId));
-        SearchConfig.trace("取满发包成功：slotId={}", slotId);
+        SearchConfig.audit("取满发包成功：slotId={}", slotId);
         return true;
     }
 }
