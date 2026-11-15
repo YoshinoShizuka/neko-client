@@ -70,7 +70,7 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         PayloadTypeRegistry<?> s2c = PayloadTypeRegistry.playS2C();
         PayloadChannels.register(c2s, "search_hello", SearchHelloPayload.TYPE, SearchHelloPayload.CODEC);
         PayloadChannels.register(c2s, "search_apply", SearchApplyPayload.TYPE, SearchApplyPayload.CODEC);
-        // Ctrl+Alt+左键 的填充请求（0.2.0 新增）：载荷只有一个 VarInt slotId ——
+        // 取满手势（0.2.0 新增，0.4.3 起组合键由玩家绑）的填充请求：载荷只有一个 VarInt slotId ——
         // 物品是什么、能装多少，全由服务端自己算。
         PayloadChannels.register(c2s, "fill_request", FillRequestPayload.TYPE, FillRequestPayload.CODEC);
         PayloadChannels.register(s2c, "search_catalog", SearchCatalogPayload.TYPE, SearchCatalogPayload.CODEC);

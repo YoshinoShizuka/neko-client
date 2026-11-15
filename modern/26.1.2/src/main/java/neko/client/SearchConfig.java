@@ -75,7 +75,7 @@ public final class SearchConfig implements IConfigHandler {
             "searchBox", SearchConfigJson.DEFAULT_SEARCH_BOX,
             SearchConfigJson.DEFAULT_KEY_SEARCH_BOX, HOTKEY_SETTINGS).apply(PREFIX);
 
-    /** Ctrl + Alt + 左键 取满手势开关（热键默认未绑定） */
+    /** 取满手势开关（组合键在 FILL_COMBO 里，这里只管开不开） */
     public static final ConfigBooleanHotkeyed FILL_GESTURE = new ConfigBooleanHotkeyed(
             "fillGesture", SearchConfigJson.DEFAULT_FILL_GESTURE,
             SearchConfigJson.DEFAULT_KEY_FILL_GESTURE, HOTKEY_SETTINGS).apply(PREFIX);

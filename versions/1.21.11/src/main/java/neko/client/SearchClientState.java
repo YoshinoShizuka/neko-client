@@ -103,7 +103,7 @@ public final class SearchClientState {
      * 服务端回目录了：建索引、按开关亮出搜索框，把已输入的查询立刻补一次匹配。
      *
      * <p>🔴 <b>{@code warehouse} 与「有没有搜索框」必须分开</b>：搜索框关掉、
-     * 但 Ctrl+Alt+左键 还开着的时候，取满手势照样要知道「服务端认过这个界面」，
+     * 但取满手势还开着的时候，它照样要知道「服务端认过这个界面」，
      * 而那个判定唯一的来源就是这条 catalog。以前这里 {@code box == null} 直接
      * return，等于把取满也一起判死 —— 开关拆分之后必须把置位提到前面。</p>
      */
@@ -130,7 +130,7 @@ public final class SearchClientState {
         }
     }
 
-    /** 当前界面是不是虚空仓库（收到过 catalog）；Ctrl+Alt+左键 的门禁之一 */
+    /** 当前界面是不是虚空仓库（收到过 catalog）；取满手势的门禁之一 */
     public static boolean isWarehouse() {
         return warehouse;
     }
@@ -223,7 +223,7 @@ public final class SearchClientState {
     }
 
     /**
-     * Ctrl + Alt + 左键：把「这一格」的填充请求发给服务端 —— 服务端会把这格的物品
+     * 取满手势：把「这一格」的填充请求发给服务端 —— 服务端会把这格的物品
      * <b>取出到背包放不下为止</b>（常规模式纯散货、潜影盒模式给满盒，都由服务端按
      * 那个玩家当前的模式与真实背包现算）。
      *
