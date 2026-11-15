@@ -193,4 +193,57 @@ class FillComboTest {
                         "不带修饰键的裸左键绑定必须生效，否则玩家清空修饰键后功能就「神秘失灵」"),
                 () -> assertTrue(FillCombo.matches(bare, BTN_LEFT_263, true, true, true)));
     }
+
+    // ------------------------------------------------------------ D 组：按钮号容错
+
+    @Test
+    @DisplayName("D1 真机复现：绑 -99、按住 Ctrl+Alt 却报按钮=3(-97) ⇒ 容错命中")
+    void toleranceCoversTheRealLogSample() {
+        assertAll(
+                () -> assertFalse(FillCombo.matches(ctrlAltLeft(), BTN_RIGHT_263, false, true, true),
+                        "精确判据仍然要把这次点右键判否 —— 容错不能污染精确路径"),
+                () -> assertTrue(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263,
+                        false, true, true), "0.4.4 日志里唯一那一击必须被救回来"));
+    }
+
+    @Test
+    @DisplayName("D2 0 基 / 1 基版本互串（键码差 1）也在容差内")
+    void toleranceCoversVersionOffset() {
+        FillCombo.Combo oldBound = FillCombo.parse(
+                List.of(ANY_KEY, ANY_KEY + 1, MOUSE_LEFT_OLD), CTRL_ALT_LEFT);
+        assertAll(
+                () -> assertTrue(FillCombo.matchesTolerantMouse(oldBound, BTN_LEFT_263, false, true, true)),
+                () -> assertTrue(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_LEFT_OLD, false, true, true)));
+    }
+
+    @Test
+    @DisplayName("D3 少按一个修饰键 ⇒ 容错也不许命中（否则单按 Ctrl 点一下就取满）")
+    void toleranceStillRequiresEveryBoundModifier() {
+        assertAll(
+                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263, false, true, false)),
+                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263, false, false, true)),
+                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), BTN_RIGHT_263, false, false, false)));
+    }
+
+    @Test
+    @DisplayName("D4 裸鼠标键绑定不许走容错（否则每次点击、包括侧键都被吞掉）")
+    void toleranceRejectsBareMouseBinding() {
+        FillCombo.Combo bare = FillCombo.parse(List.of(MOUSE_LEFT_263), List.of("MOUSE_LEFT"));
+        assertAll(
+                () -> assertFalse(bare.hasModifiers()),
+                () -> assertFalse(FillCombo.matchesTolerantMouse(bare, BTN_RIGHT_263, true, true, true)),
+                () -> assertFalse(FillCombo.matchesTolerantMouse(bare, BTN_RIGHT_263, false, false, false)));
+    }
+
+    @Test
+    @DisplayName("D5 侧键（键码差 >2）与不可用 / null 组合键一律不许容错")
+    void toleranceIsBounded() {
+        FillCombo.Combo broken = FillCombo.parse(
+                List.of(ANY_KEY, MOUSE_LEFT_263), List.of("KEY_A", "MOUSE_LEFT"));
+        int sideButton = 8;   // -92，与 -99 差 7
+        assertAll(
+                () -> assertFalse(FillCombo.matchesTolerantMouse(ctrlAltLeft(), sideButton, false, true, true)),
+                () -> assertFalse(FillCombo.matchesTolerantMouse(broken, BTN_RIGHT_263, false, true, true)),
+                () -> assertFalse(FillCombo.matchesTolerantMouse(null, BTN_RIGHT_263, false, true, true)));
+    }
 }

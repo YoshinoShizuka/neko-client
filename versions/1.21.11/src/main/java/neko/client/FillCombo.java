@@ -59,6 +59,17 @@ final class FillCombo {
     /** malilib 的鼠标键编码偏移：{@code 键码 = 原版按钮号 - 100}。推论：负数 = 鼠标键。 */
     static final int MOUSE_KEY_OFFSET = 100;
 
+    /**
+     * 按钮号容错范围（键码差）。
+     *
+     * <p>覆盖的全部现实差异：26.3 是 1 基（左 1→-99、右 3→-97）、26.2 及更早是 0 基
+     * （左 0→-100、右 1→-99）；同一个「左键」最多差 1，左↔右最多差 2。
+     * 第 4/5 个侧键（键码 -96 / -95）差到 3 以上，仍然挡在外面 —— 容错不是
+     * 「随便点哪个键都算」。真机 0.4.4 日志里就抓到过一次「按住 Ctrl+Alt 点下去、
+     * 按钮号却是 3（右键）」的样本，绑的左键 -99 因此被精确判据判否。</p>
+     */
+    static final int MOUSE_BUTTON_TOLERANCE = 2;
+
     private FillCombo() {
     }
 
@@ -78,6 +89,11 @@ final class FillCombo {
 
         boolean usable() {
             return this.problem == null;
+        }
+
+        /** 绑了至少一个修饰键 —— 只有这种情况下才允许按钮号容错（见 {@link #matchesTolerantMouse}） */
+        boolean hasModifiers() {
+            return this.shift || this.control || this.alt;
         }
     }
 
@@ -192,6 +208,41 @@ final class FillCombo {
             return false;
         }
         // 绑了就必须要按着；没绑的不要求（多按了也不算错，同 allowExtraKeys）
+        return (!combo.shift() || shift)
+                && (!combo.control() || control)
+                && (!combo.alt() || alt);
+    }
+
+    /**
+     * <b>按钮号容错</b>：修饰键全部按着、且点下的是「同一族鼠标键」时算命中，
+     * 不追究按钮号与绑定键码是否逐位相等。
+     *
+     * <h2>为什么需要这条</h2>
+     * <p>0.4.4 真机日志只抓到一击：{@code 按钮=3 → 键码=-97}，而绑定的是
+     * {@code MOUSE_LEFT=-99}，精确判据判否，玩家看到的就是「按了没反应」。
+     * 按钮号来自 {@code SDL_MouseButtonEvent.button()}（javap 实证一路直传，
+     * 没有任何变换），它在不同 MC 版本是 0 基 / 1 基、在不同鼠标 / 驱动上还可能
+     * 把主键报成另一个号。<b>把「哪一下点击算取满」押在这个数上，就是把功能
+     * 押在玩家的外设上</b> —— 而组合键里真正表达「我刻意要取满」的，是按住的
+     * 那几个修饰键，不是按钮号。</p>
+     *
+     * <h2>为什么要求至少绑一个修饰键</h2>
+     * <p>玩家把组合键清空成「只有左键」时，容错会把<b>每一次点击</b>（含右键、
+     * 侧键）都判成取满，普通箱子界面会被整片吞掉。所以裸鼠标键绑定仍然走
+     * {@link #matches} 的精确判据，容错只对「按住 Ctrl/Alt/Shift 再点」开放。</p>
+     *
+     * <p>容错范围 {@link #MOUSE_BUTTON_TOLERANCE} 只放宽到 ±2，侧键以外的
+     * 常规按钮族最多就这么大；再远一律不算。命中时调用方必须打日志说明
+     * 「这次是容错命中的」，绝不静默改语义。</p>
+     */
+    static boolean matchesTolerantMouse(Combo combo, int mouseButton,
+                                        boolean shift, boolean control, boolean alt) {
+        if (combo == null || !combo.usable() || !combo.hasModifiers()) {
+            return false;
+        }
+        if (Math.abs((mouseButton - MOUSE_KEY_OFFSET) - combo.mouseCode()) > MOUSE_BUTTON_TOLERANCE) {
+            return false;
+        }
         return (!combo.shift() || shift)
                 && (!combo.control() || control)
                 && (!combo.alt() || alt);

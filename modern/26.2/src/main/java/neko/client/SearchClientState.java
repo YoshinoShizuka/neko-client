@@ -85,6 +85,10 @@ public final class SearchClientState {
         index = List.of();
         pendingQuery = null;
         warehouse = false;
+        // 每一次 bind 都会把「服务端认过这个界面」清零，必须留痕：玩家反复开关界面时
+        // 若 hello 被 500ms 节流挡掉，warehouse 就会一直停在 false，取满静默失效。
+        SearchConfig.trace("界面绑定：warehouse 清零，功能开关={}",
+                SearchConfig.anyFeatureEnabled() ? "至少一个开着" : "全关");
         if (SearchConfig.anyFeatureEnabled()) {
             sendHello();
         }
@@ -97,6 +101,7 @@ public final class SearchClientState {
         index = List.of();
         pendingQuery = null;
         warehouse = false;
+        SearchConfig.trace("界面关闭：warehouse 清零");
     }
 
     /**
@@ -109,6 +114,8 @@ public final class SearchClientState {
      */
     public static void onCatalog(List<String> itemIds) {
         warehouse = true;
+        SearchConfig.trace("收到服务端目录：{} 条 ⇒ warehouse=true（取满手势的门禁已放行）",
+                itemIds == null ? -1 : itemIds.size());
         index = SearchIndex.build(itemIds, SearchCatalogResolver::displayNameOf);
         if (box == null) {
             return;
@@ -199,6 +206,7 @@ public final class SearchClientState {
     private static void sendHello() {
         long now = System.currentTimeMillis();
         if (now - lastHelloSentAt < HELLO_INTERVAL_MS) {
+            SearchConfig.trace("请求目录：被 {}ms 节流挡下", HELLO_INTERVAL_MS);
             return;
         }
         lastHelloSentAt = now;
@@ -206,11 +214,26 @@ public final class SearchClientState {
         // 🔴 还要先过通道归属门禁：撞名的若是别的类，这一发会在编码阶段炸在 netty 线程上，
         // catch 不到，只会表现为断线。宁可搜索框不出现。
         if (!PayloadChannels.usable(SearchHelloPayload.TYPE)) {
+            SearchConfig.trace("请求目录：通道归属门禁没过（不发）");
             return;
         }
-        if (ClientPlayNetworking.canSend(SearchHelloPayload.TYPE)) {
-            ClientPlayNetworking.send(SearchHelloPayload.INSTANCE);
+        if (!ClientPlayNetworking.canSend(SearchHelloPayload.TYPE)) {
+            SearchConfig.trace("请求目录：对端不支持 search_hello（canSend=false，不发）");
+            return;
         }
+        ClientPlayNetworking.send(SearchHelloPayload.INSTANCE);
+        SearchConfig.trace("请求目录：search_hello 已发出（等 catalog）");
+    }
+
+    /**
+     * 取满手势发现目录还没到时，绕过节流立刻再要一次目录。
+     *
+     * <p>只在「玩家已经按了组合键」这种明确意图下调用，不会自己刷包；服务端
+     * 本来就有 100ms 的 hello 限流，重复要一份目录没有副作用。</p>
+     */
+    public static void refreshCatalog() {
+        lastHelloSentAt = 0L;
+        sendHello();
     }
 
     private static void sendApply(List<String> matchedIds) {
@@ -240,12 +263,15 @@ public final class SearchClientState {
         // 两条都过不去就返回 false，调用方不取消原版点击 ⇒ 玩家看到的还是「取 1 个」，
         // 没有残迹也没有报错。
         if (!PayloadChannels.usable(FillRequestPayload.TYPE)) {
+            SearchConfig.trace("取满发包失败：fill_request 通道归属门禁没过");
             return false;
         }
         if (!ClientPlayNetworking.canSend(FillRequestPayload.TYPE)) {
+            SearchConfig.trace("取满发包失败：对端不收 fill_request（canSend=false）");
             return false;
         }
         ClientPlayNetworking.send(new FillRequestPayload(slotId));
+        SearchConfig.trace("取满发包成功：slotId={}", slotId);
         return true;
     }
 }

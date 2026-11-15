@@ -60,10 +60,6 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     protected int imageWidth;
     @Shadow
     protected int imageHeight;
-    /** 鼠标当前悬停的槽位（原版 {@code mouseMoved} 更新）；取满手势靠它定位 */
-    @Shadow
-    protected Slot hoveredSlot;
-
     // 🔴 addRenderableWidget 不在这里 @Shadow：它声明在父类 Screen，而 @Shadow 只查
     // 目标类自己声明的成员（2026-11-01 真机崩溃实录）—— 父类成员走 AccessorScreen 的
     // @Invoker，见本类 onInit 里的调用。
@@ -232,12 +228,21 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
      * 这里原样放行 —— 点击退回「取 1 个」的原版语义，装了旧客户端的玩家
      * 感知不到任何异常，与搜索框的降级策略一致。</p>
      *
-     * <h2>为什么坐标要再校一次</h2>
-     * <p>{@code hoveredSlot} 由 {@code mouseMoved} 更新；鼠标瞬移后同帧点击时，
-     * 它可能还指着上一格。用 {@code slot.x/y}（容器内坐标）+ {@code leftPos/topPos}
-     * 再验一次 16×16 命中，就不会把请求发到错的格子上。
-     * 不用 {@code isHovering}：26.3 的 {@code isHovering(Slot,…)} 是 protected、
-     * 1.21.11 的同名重载却是 private，自己算坐标才是五版本同文。</p>
+     * <h2>槽位从点击坐标现算，不读 hoveredSlot</h2>
+     * <p>26.3 的 {@code hoveredSlot} 是渲染管线 {@code extractRenderState} 里写的
+     * （javap 实证），而原版 {@code mouseClicked} 自己是把
+     * {@code getHoveredSlot(event.x(), event.y())} 算进一个<b>局部变量</b>的。
+     * 旧版这里读字段再用 {@code event.x()} 复校一次严格 16×16，既可能读到上一帧的
+     * 旧格，又漏掉了原版命中框四周各 1px 的宽容 —— 两处都只会表现为「按了没反应」。
+     * 现在照原版 {@code isHovering} 的公式遍历菜单槽位，一次算准。</p>
+     *
+     * <h2>为什么目录没到也把请求发出去</h2>
+     * <p>服务端 {@code FillNetwork#handleFill} 才是权威：它自己会验
+     * {@code voidWarehouse} 规则 + {@code containerMenu instanceof VoidWarehouseMenu}。
+     * 客户端的 {@code warehouse} 只是「搜索框亮不亮」的视图标志，把它当作动作通道的
+     * 硬门禁，等于让取满依赖一次可有可无的视图握手 —— 目录一丢，功能就静默消失。
+     * 目录没到时改成：补发一次 hello、请求照发、但<b>不吞原版点击</b>（退回普通取 1 个），
+     * 目录到了再恢复「点一下取满」的完整语义。</p>
      */
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void voidwarehouseSearch$onMouseClickedFill(MouseButtonEvent event, boolean doubleClick,
@@ -248,31 +253,38 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
             return;
         }
         // 🔴 递过去的是「点击那一瞬间按着哪些修饰键」，不是判据本身。判据（绑了哪些键、
-        // 要不要 Shift/Ctrl/Alt）全在 SearchConfig 那边 —— 本类一旦写出
-        // `hasControlDown() && hasAltDown()` 就又变回 0.4.2 的写死形态了。
-        // 为什么敢信这份掩码：原版「Shift 点击 = 整组快速移动」读的就是它（26.3 的
-        // 位是 0xC0 / 0x300，1.21.11 是另一套，所以只能用语义方法、不能手搓位运算）。
+        // 要不要 Shift/Ctrl/Alt、按钮号要不要容错）全在 SearchConfig 那边 ——
+        // 本类一旦写出 `hasControlDown() && hasAltDown()` 就又变回 0.4.2 的写死形态了。
         if (!neko.client.SearchConfig.isFillComboHeld(event.button(),
                 event.hasShiftDown(), event.hasControlDown(), event.hasAltDown())) {
             return;
         }
         if (!((Object) this.getMenu() instanceof ChestMenu)) {
+            neko.client.SearchConfig.trace("取满中止：菜单不是 ChestMenu（{}）",
+                    this.getMenu().getClass().getName());
             return;
         }
-        // 服务端认过这个界面（回过 catalog）才算虚空仓库 —— 普通大箱子永远不会 true
-        if (!SearchClientState.isWarehouse()) {
+        boolean warehouse = SearchClientState.isWarehouse();
+        if (!warehouse) {
+            neko.client.SearchConfig.trace("取满降级：目录未到 ⇒ 补发 hello、请求照发、不吞这次原版点击");
+            SearchClientState.refreshCatalog();
+        }
+        Slot slot = voidwarehouseSearch$slotAt(event);
+        if (slot == null) {
+            neko.client.SearchConfig.trace("取满中止：点击坐标 ({}, {}) 没落在 0..{} 的内容格上",
+                    event.x(), event.y(), CONTENT_SLOTS);
             return;
         }
-        Slot slot = this.hoveredSlot;
-        if (slot == null || slot.index < 0 || slot.index >= CONTENT_SLOTS || slot.getItem().isEmpty()) {
-            return;
-        }
-        double relX = event.x() - (this.leftPos + slot.x);
-        double relY = event.y() - (this.topPos + slot.y);
-        if (relX < 0 || relX >= 16 || relY < 0 || relY >= 16) {
+        if (slot.getItem().isEmpty()) {
+            neko.client.SearchConfig.trace("取满中止：第 {} 格是空的", slot.index);
             return;
         }
         if (!SearchClientState.sendFill(slot.index)) {
+            return;
+        }
+        neko.client.SearchConfig.trace("取满链路：slot={} 目录={} ⇒ {}原版点击",
+                slot.index, warehouse ? "已到" : "未到", warehouse ? "吞掉" : "放行");
+        if (!warehouse) {
             return;
         }
         // 原版点击被吞掉，它的「点框外退出搜索」也不会执行 —— 这里补上，
@@ -281,6 +293,27 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
             this.voidwarehouseSearch$setSearchFocused(false);
         }
         cir.setReturnValue(true);
+    }
+
+    /**
+     * 照原版 {@code isHovering} 的公式，从点击事件坐标现算落在哪个槽位。
+     * 原版命中框是 {@code x-1 .. x+16+1}（四周各宽容 1px），不是严格的 16×16。
+     * 只看前 {@link #CONTENT_SLOTS} 格内容区：导航行与玩家背包不是取满的目标。
+     */
+    @Unique
+    private Slot voidwarehouseSearch$slotAt(MouseButtonEvent event) {
+        double relX = event.x() - this.leftPos;
+        double relY = event.y() - this.topPos;
+        for (Slot candidate : this.getMenu().slots) {
+            if (candidate.index < 0 || candidate.index >= CONTENT_SLOTS) {
+                continue;
+            }
+            if (relX >= candidate.x - 1 && relX < candidate.x + 17
+                    && relY >= candidate.y - 1 && relY < candidate.y + 17) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /**

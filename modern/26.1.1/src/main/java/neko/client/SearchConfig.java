@@ -256,23 +256,46 @@ public final class SearchConfig implements IConfigHandler {
      * @param alt         {@code event.hasAltDown()}
      * @return 组合键不可用（玩家清空了 / 绑了字母键）⇒ 恒 false
      */
-    /** 第一次「按着修饰键点击」时打一行判据快照（每次游戏一次，不刷屏） */
-    private static boolean firstModifierClickLogged;
+    /**
+     * 诊断日志：前 40 行全打，之后每秒最多一行。
+     *
+     * <p>0.4.4 的「首击只打一次」是个设计错误：真机上那一击抓到的是右键，
+     * 之后玩家真正按的 Ctrl+Alt+左键一个字都没留下，日志看起来「模组没反应」，
+     * 实际上只是没记录。<b>只打一次的日志等于没有日志</b> —— 但也不能让连点把
+     * 日志刷爆，所以是有限的 burst + 之后的节流。</p>
+     */
+    private static int traceCount;
+    private static long lastTraceAt;
+
+    public static void trace(String format, Object... args) {
+        long now = System.currentTimeMillis();
+        if (traceCount >= 40 && now - lastTraceAt < 1000L) {
+            return;
+        }
+        traceCount++;
+        lastTraceAt = now;
+        VoidWarehouseSearchClient.LOGGER.info("[虚空仓库搜索] " + format, args);
+    }
 
     public static boolean isFillComboHeld(int mouseButton, boolean shift, boolean control, boolean alt) {
         FillCombo.Combo combo = fillCombo();
-        boolean matched = FillCombo.matches(combo, mouseButton, shift, control, alt);
-        // 「按下去没反应」是最难自查的故障：0.4.3 日志零异常、配置全对、判据却恒 false。
-        // 这里把「点击那一拍」的原话留一行 —— 下次再报失灵，不必再猜是「掩码没读到」
-        // 还是「按钮号对不上」。只挑按着修饰键的那一击打，普通点击不打扰玩家。
-        if (!firstModifierClickLogged && (shift || control || alt)) {
-            firstModifierClickLogged = true;
-            VoidWarehouseSearchClient.LOGGER.info(
-                    "[虚空仓库搜索] 取满判据首击：按钮={} → 键码={} 绑定鼠标键={} "
-                            + "Shift={} Ctrl={} Alt={} 组合键={} 命中={}",
+        boolean exact = FillCombo.matches(combo, mouseButton, shift, control, alt);
+        // 精确判否时再走一次按钮号容错：修饰键全按着、点的是同一族鼠标键就算命中。
+        // 0.4.4 真机日志里唯一那一击是「按钮=3 / 键码=-97」而绑定 -99，精确判据把它丢了。
+        boolean tolerant = !exact
+                && FillCombo.matchesTolerantMouse(combo, mouseButton, shift, control, alt);
+        boolean matched = exact || tolerant;
+        // 带修饰键的点击、或者已经命中的点击，都留一行原话。玩家报「按了没反应」时
+        // 一眼能分清「根本没进判据」「按钮号对不上」「判据命中但后面卡住了」。
+        if ((shift || control || alt) || matched) {
+            trace("取满判据：按钮={} → 键码={} 绑定鼠标键={} Shift={} Ctrl={} Alt={} "
+                            + "组合键={} ⇒ {}",
                     mouseButton, mouseButton - FillCombo.MOUSE_KEY_OFFSET, combo.mouseCode(),
                     shift, control, alt,
-                    combo.usable() ? "可用" : "不可用：" + combo.problem(), matched);
+                    combo.usable() ? "可用" : "不可用：" + combo.problem(),
+                    exact ? "命中（精确）"
+                            : tolerant ? "命中（按钮号容错 ±" + FillCombo.MOUSE_BUTTON_TOLERANCE + "）"
+                            : "未命中");
         }
         return matched;
     }
