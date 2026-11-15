@@ -1,110 +1,100 @@
 package neko.voidwarehouse.search;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import fi.dy.masa.malilib.config.IConfigHandler;
+import fi.dy.masa.malilib.config.options.ConfigBooleanHotkeyed;
+import fi.dy.masa.malilib.config.options.ConfigHotkey;
+import fi.dy.masa.malilib.hotkeys.IHotkey;
+import fi.dy.masa.malilib.hotkeys.KeyAction;
+import fi.dy.masa.malilib.hotkeys.KeybindSettings;
 import net.fabricmc.loader.api.FabricLoader;
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
- * 两个功能各自的独立开关，落在 {@code config/neko-voidwarehouse-search.json}。
+ * 两个功能的开关 + 三个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
  *
- * <h2>为什么不用 Gson 直接序列化一个配置类</h2>
- * <p>JSON 没有注释，而这文件是给玩家手改的。「改完要不要重启」「快捷键去哪改」
- * 这类问题写在 README 里没人看 —— 所以这里<b>手写模板</b>，把说明做成
- * {@code _readme} 字段一起落盘；读的时候用 {@link JsonParser} 宽松解析，
- * 缺字段一律回落到内置默认值（老版本配置文件、玩家删了一行，都不会炸）。</p>
+ * <h2>为什么是 {@code ConfigBooleanHotkeyed}</h2>
+ * <p>它是「布尔开关 + 一个热键」的合体：在配置界面里显示成<b>一行</b>
+ * （左边复选框、右边按键按钮），按热键等于点那个复选框 —— 这正是 MiniHUD
+ * 每个信息行 / 渲染开关的样子。所以「开关」和「热键」不是两套东西，
+ * 改热键和改开关在同一个界面、同一次保存里完成。</p>
  *
- * <h2>写盘时机</h2>
- * <p><b>每次开关一变就立刻写</b>，不等退出游戏：玩家按完热键就去打怪了，
- * 崩一次客户端不该把开关吞掉。写盘失败只记日志、不影响当前内存状态 ——
- * 开关是「本次会话有效」的，落盘只是尽力而为。</p>
+ * <h2>🔴 为什么热键必须走 malilib，而不是原版 {@code KeyMapping}</h2>
+ * <p>原版按键绑定<b>只在没有界面打开时才会被派发</b>（{@code Minecraft.screen != null}
+ * 时 {@code KeyMapping.click} 根本不会被调用）—— 而这个模组的两个功能，玩家
+ * 恰恰都是<b>在仓库界面打开着</b>的时候要切的：按 H 藏掉搜索框、按 J 关掉取满手势。
+ * 用原版按键绑定的话，这两个键在真正的使用场景里一次都不会触发。</p>
  *
- * <h2>生效时机</h2>
- * <ul>
- *   <li><b>热键切换</b>：立刻生效（当前界面也会就地刷新，见 {@link SearchScreenAccess}）；</li>
- *   <li><b>手改文件</b>：进一次世界（{@code JOIN} 时重读）或重开游戏；</li>
- *   <li><b>打开容器界面</b>：每次 {@code init} 都读当前内存值，所以改完文件重开界面也生效。</li>
- * </ul>
+ * <p>malilib 的热键带 {@code KeybindSettings.Context}：这里用 {@code ANY}
+ * （游戏内 + 任何界面都响应），并且 <b>{@code cancel=false}</b> ——
+ * 按键不被吞掉，所以搜索框聚焦时按 H 还是正常打出 {@code h}（回调里也会
+ * 主动让路，见 {@link SearchKeybinds}）。</p>
  *
- * <h2>🔴 为什么把「读 JSON」和「碰磁盘」拆开</h2>
- * <p>{@link #parse(String)} / {@link #render(boolean, boolean)} 是<b>纯函数</b>，
- * 不碰 {@link FabricLoader}、不碰文件系统 —— 于是它们能在 JUnit 里直接跑
- * （{@code :modern:26.3:test}，不启动游戏）。这不是为了测试而测试：模板是手写的
- * 文本块，写错一个引号就会让所有人「配置改了没反应」，而这种错误只有真解析一遍才抓得到。
- * 磁盘那半（{@link #load()} / {@link #save()}）只负责按 {@link #file()} 取路径、
- * 读写文本、打日志。</p>
+ * <h2>落盘</h2>
+ * <p>仍然是 {@code config/neko-voidwarehouse-search.json}，格式由
+ * {@link SearchConfigJson} 这一层负责（纯函数、可单测）。本类只做
+ * 「malilib 配置对象 ↔ 那五个字段」的搬运，并实现 {@link IConfigHandler}
+ * 让 malilib 的 {@code ConfigManager} 也能触发加载 / 保存。</p>
  */
-public final class SearchConfig {
+public final class SearchConfig implements IConfigHandler {
 
-    /** 配置文件在 {@code config/} 下的文件名 */
-    private static final String FILE_NAME = "neko-voidwarehouse-search.json";
-
-    /** 内置默认值：两个功能都开（装了就按 0.2.0 之前的行为跑） */
-    private static final boolean DEFAULT_SEARCH_BOX = true;
-    private static final boolean DEFAULT_FILL_GESTURE = true;
-
-    private static boolean searchBox = DEFAULT_SEARCH_BOX;
-    private static boolean fillGesture = DEFAULT_FILL_GESTURE;
-
-    private SearchConfig() {
-    }
+    /** mod id，同时是 malilib 配置管理的 key */
+    public static final String MOD_ID = "neko_voidwarehouse_search";
 
     /**
-     * 解析结果（纯数据）。
-     *
-     * <p>用 record 而不是两个 {@code boolean[]}：{@code Values[0]} 这种写法
-     * 在断言失败时的报错信息会是一串 {@code [Z@1b6d3586}，看不出是哪个开关。</p>
+     * 翻译键前缀。malilib 的 {@code apply()} 会把它拼成
+     * {@code <prefix>.name.<配置名>} / {@code <prefix>.comment.<配置名>}，
+     * 与 MiniHUD 的 {@code minihud.config.xxx.name.yyy} 完全同一套规则。
      */
-    record Values(boolean searchBox, boolean fillGesture) {
-    }
-
-    // ------------------------------------------------------------------ 纯逻辑（可脱离游戏测试）
+    private static final String PREFIX = MOD_ID + ".config";
 
     /**
-     * 把配置 JSON 解析成两个开关。<b>不碰磁盘</b>。
+     * 热键设置：<b>游戏内和界面里都响应</b>，按下即触发，且<b>不吞按键</b>。
      *
-     * @throws IllegalArgumentException 顶层不是 JSON 对象（语法错误由 Gson 抛
-     *                                  {@code JsonSyntaxException}，同样是 RuntimeException）
+     * <p>参数顺序（javap {@code KeybindSettings.create} 实证）：
+     * context、activateOn、allowExtraKeys、orderSensitive、exclusive、cancel、allowEmpty。
+     * 第二个 {@code false} 是 cancel —— 置 true 的话搜索框里就打不出 {@code h} 了。</p>
      */
-    static Values parse(String text) {
-        JsonElement root = JsonParser.parseString(text);
-        if (!root.isJsonObject()) {
-            throw new IllegalArgumentException("顶层不是 JSON 对象");
-        }
-        JsonObject json = root.getAsJsonObject();
-        return new Values(
-                readBoolean(json, "searchBox", DEFAULT_SEARCH_BOX),
-                readBoolean(json, "fillGesture", DEFAULT_FILL_GESTURE));
-    }
+    private static final KeybindSettings HOTKEY_SETTINGS = KeybindSettings.create(
+            KeybindSettings.Context.ANY,   // 界面打开时也要响应（原版按键绑定做不到）
+            KeyAction.PRESS,               // 按下即触发，不等松开
+            true,                          // allowExtraKeys：多按了 Shift 之类不算错
+            false,                         // orderSensitive：组合键不要求按下顺序
+            false,                         // exclusive：不排他
+            false,                         // cancel：不吞按键（否则会吃掉输入框里的字符）
+            true);                         // allowEmpty：允许玩家把热键清空
+
+    /** 容器界面里的搜索框开关，默认 <b>H</b> */
+    public static final ConfigBooleanHotkeyed SEARCH_BOX = new ConfigBooleanHotkeyed(
+            "searchBox", SearchConfigJson.DEFAULT_SEARCH_BOX,
+            SearchConfigJson.DEFAULT_KEY_SEARCH_BOX, HOTKEY_SETTINGS).apply(PREFIX);
+
+    /** Ctrl + Alt + 左键 取满手势开关，默认 <b>J</b> */
+    public static final ConfigBooleanHotkeyed FILL_GESTURE = new ConfigBooleanHotkeyed(
+            "fillGesture", SearchConfigJson.DEFAULT_FILL_GESTURE,
+            SearchConfigJson.DEFAULT_KEY_FILL_GESTURE, HOTKEY_SETTINGS).apply(PREFIX);
+
+    /** 打开配置界面的热键，默认 <b>V</b> */
+    public static final ConfigHotkey OPEN_GUI = new ConfigHotkey(
+            "openGui", SearchConfigJson.DEFAULT_KEY_OPEN_GUI, HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
-     * 生成落盘的文本（含 {@code _readme} 说明）。<b>不碰磁盘</b>。
+     * 配置界面里按顺序列出的全部条目。
      *
-     * <p>字段顺序固定、两个空格缩进：玩家手改时代码对齐，diff 也干净。</p>
+     * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
+     * （{@code ConfigOptionWrapper.createFor} 要 {@code IConfigBase}，而
+     * {@code IHotkey} 是它的子接口）与 malilib 的热键表
+     * （{@code addHotkeysForCategory} 要 {@code IHotkey}）。两份列表会漂，一份不会。</p>
      */
-    static String render(boolean searchBox, boolean fillGesture) {
-        return """
-                {
-                  "_readme": "两个功能的独立开关。改完保存后重进一次世界即生效（热键切换是立刻生效）。",
-                  "_readme_keys": "快捷键不在这里改：选项 → 控制 → 按键绑定 → 虚空仓库。开关状态在游戏内按热键切换时会立刻写回本文件。",
-                  "searchBox": %s,
-                  "fillGesture": %s
-                }
-                """.formatted(searchBox, fillGesture);
-    }
+    public static final List<IHotkey> OPTIONS = List.of(SEARCH_BOX, FILL_GESTURE, OPEN_GUI);
 
-    /** 缺字段、类型不对（例如手改成字符串 {@code "false"}）一律回落到默认值 */
-    private static boolean readBoolean(JsonObject json, String key, boolean fallback) {
-        JsonElement value = json.get(key);
-        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean()) {
-            return fallback;
-        }
-        return value.getAsBoolean();
+    /** 给 malilib 的 {@code ConfigManager} 用（它会自己 new 一个；本类只有静态状态） */
+    public SearchConfig() {
     }
 
     // ------------------------------------------------------------------ 磁盘
@@ -112,69 +102,83 @@ public final class SearchConfig {
     /**
      * 配置文件路径：{@code .minecraft/config/neko-voidwarehouse-search.json}。
      *
-     * <p>🔴 <b>刻意不做成静态常量</b>：{@code FabricLoader.getInstance()} 在
-     * 「没启动游戏」的 JVM 里是 null，静态常量会让整个类一加载就 NPE ——
-     * 那样纯函数也测不了。放到方法里，只有真读写磁盘时才会碰它。</p>
+     * <p>刻意不做成静态常量：{@code FabricLoader.getInstance()} 在「没启动游戏」的
+     * JVM 里是 null，静态常量会让整个类一加载就 NPE，纯逻辑那一层也就跟着测不了。</p>
      */
     private static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
+        return FabricLoader.getInstance().getConfigDir().resolve(SearchConfigJson.FILE_NAME);
     }
 
-    /** 从磁盘读（文件不存在就地写一份模板）。{@code JOIN} 与客户端初始化各调一次 */
-    public static void load() {
+    /**
+     * 从磁盘读进 malilib 配置对象（文件不存在就地写一份模板）。
+     *
+     * <p>调用点：客户端初始化、每次 {@code JOIN}、以及 malilib 的
+     * {@code ConfigManager.loadAllConfigs()}。</p>
+     */
+    public static void loadFromFile() {
         Path path = file();
         if (!Files.isRegularFile(path)) {
-            save();
+            saveToFile();
             return;
         }
         try {
-            Values values = parse(Files.readString(path, StandardCharsets.UTF_8));
-            searchBox = values.searchBox();
-            fillGesture = values.fillGesture();
+            SearchConfigJson.Values values =
+                    SearchConfigJson.parse(Files.readString(path, StandardCharsets.UTF_8));
+            // 布尔值与热键一起灌：malilib 的这个 setter 就是为「一对值」准备的
+            SEARCH_BOX.setBooleanHotkeyValue(Pair.of(values.searchBox(), values.keySearchBox()));
+            FILL_GESTURE.setBooleanHotkeyValue(Pair.of(values.fillGesture(), values.keyFillGesture()));
+            OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
         } catch (IOException | RuntimeException broken) {
-            // 文件坏了不能把功能一起带走：留着上次的内存值（首次加载即默认值），只报一行
-            VoidWarehouseSearchClient.LOGGER.warn("[虚空仓库搜索] 配置文件读取失败，沿用当前开关：{}", path, broken);
+            // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
+            VoidWarehouseSearchClient.LOGGER.warn(
+                    "[虚空仓库搜索] 配置文件读取失败，沿用当前设置：{}", path, broken);
         }
     }
 
-    /** 把当前开关写回磁盘（模板含 {@code _readme}，方便玩家手改） */
-    public static void save() {
+    /** 把当前设置写回磁盘（模板含 {@code _readme}，方便玩家手改） */
+    public static void saveToFile() {
+        Pair<Boolean, String> box = SEARCH_BOX.getBooleanHotkeyValue();
+        Pair<Boolean, String> fill = FILL_GESTURE.getBooleanHotkeyValue();
+        String text = SearchConfigJson.render(new SearchConfigJson.Values(
+                box.getLeft(), fill.getLeft(),
+                box.getRight(), fill.getRight(),
+                OPEN_GUI.getHotkeyStringValue()));
+
         Path path = file();
         try {
             Path parent = path.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.writeString(path, render(searchBox, fillGesture), StandardCharsets.UTF_8);
+            Files.writeString(path, text, StandardCharsets.UTF_8);
         } catch (IOException failed) {
-            VoidWarehouseSearchClient.LOGGER.warn("[虚空仓库搜索] 配置文件写入失败（开关只在本次游戏内有效）：{}", path, failed);
+            VoidWarehouseSearchClient.LOGGER.warn(
+                    "[虚空仓库搜索] 配置文件写入失败（设置只在本次游戏内有效）：{}", path, failed);
         }
+    }
+
+    // ------------------------------------------------------------------ IConfigHandler
+
+    @Override
+    public void load() {
+        loadFromFile();
+    }
+
+    @Override
+    public void save() {
+        saveToFile();
     }
 
     // ------------------------------------------------------------------ 开关
 
     /** 容器界面里的搜索框（关闭后连 hello / catalog 都不再发，除非取满手势还需要） */
     public static boolean isSearchBoxEnabled() {
-        return searchBox;
+        return SEARCH_BOX.getBooleanValue();
     }
 
     /** Ctrl + Alt + 左键 取满手势（关闭后退回原版「取 1 个」，界面上没有任何残迹） */
     public static boolean isFillGestureEnabled() {
-        return fillGesture;
-    }
-
-    /** @return 切换后的状态 */
-    public static boolean toggleSearchBox() {
-        searchBox = !searchBox;
-        save();
-        return searchBox;
-    }
-
-    /** @return 切换后的状态 */
-    public static boolean toggleFillGesture() {
-        fillGesture = !fillGesture;
-        save();
-        return fillGesture;
+        return FILL_GESTURE.getBooleanValue();
     }
 
     /**
@@ -184,6 +188,6 @@ public final class SearchConfig {
      * 「服务端认这个界面」），所以只要还有一个开着，就必须照常握手。</p>
      */
     public static boolean anyFeatureEnabled() {
-        return searchBox || fillGesture;
+        return isSearchBoxEnabled() || isFillGestureEnabled();
     }
 }

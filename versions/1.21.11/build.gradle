@@ -25,6 +25,12 @@ base {
 
 repositories {
     mavenCentral()
+
+    // malilib（masa 系客户端库：热键 + 配置界面）
+    maven {
+        name = 'masa'
+        url = 'https://masa.dy.fi/maven/sakura-ryoko'
+    }
 }
 
 dependencies {
@@ -36,6 +42,15 @@ dependencies {
     // 混淆版本必须用 modImplementation —— 否则 fabric-api 内部的中间名不会被 remap，
     // 代码里写的 net.fabricmc.fabric.api.networking.* 运行时会找不到类
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // malilib：热键（ConfigBooleanHotkeyed / ConfigHotkey）与配置界面（GuiConfigsBase）。
+    // 🔴 1.21.11 的 malilib 产物是**中间名**（javap 实证：GuiBase extends net.minecraft.class_437）
+    // ⇒ 必须 modImplementation 让 loom 先 remap 成 Mojang 名，否则一行都编译不过。
+    modImplementation("fi.dy.masa.malilib:${project.malilib_artifact}:${project.malilib_version}") {
+        // conditional-mixin 已被 malilib 打进自己的 jar（META-INF/jars/），
+        // maven 上那份坐标（me.fallenbreath:conditional-mixin-fabric:0.6.4）解析不到也不影响
+        exclude group: 'me.fallenbreath', module: 'conditional-mixin-fabric'
+    }
 
     // 共享纯逻辑（SearchIndex）：jar 打包时把它的 class 一并合并进来
     implementation project(':common')

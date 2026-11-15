@@ -129,6 +129,18 @@ public final class SearchClientState {
         return warehouse;
     }
 
+    /**
+     * 搜索框此刻是不是聚焦着（玩家正在里面打字）。
+     *
+     * <p>malilib 的热键是 {@code Context.ANY} + {@code cancel=false}：界面里也响应、
+     * 但不吞按键。所以「正在打字」时热键回调必须<b>自己让路</b>，否则打一个
+     * {@code h} 会把搜索框关掉。判据直接用输入框自己的焦点状态 —— 它才是
+     * 唯一真实的来源（界面侧没有第二份焦点副本）。</p>
+     */
+    public static boolean isSearchFocused() {
+        return box != null && box.isFocused();
+    }
+
     /** 搜索框内容变化（responder）：只记下待发查询，真正发送在 tick 里带尾随防抖 */
     public static void onQueryChanged(String query) {
         // 开关关着时一个字都不往服务端发（清空由 exitSearch 负责，不走这条）

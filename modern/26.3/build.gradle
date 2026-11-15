@@ -18,6 +18,12 @@ base {
 
 repositories {
     mavenCentral()
+
+    // malilib（masa 系客户端库：热键 + 配置界面）
+    maven {
+        name = 'masa'
+        url = 'https://masa.dy.fi/maven/sakura-ryoko'
+    }
 }
 
 dependencies {
@@ -26,6 +32,14 @@ dependencies {
     // 26.x 不混淆，所有依赖都用普通 implementation，不需要 modImplementation
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // malilib：热键（ConfigBooleanHotkeyed / ConfigHotkey）与配置界面（GuiConfigsBase）。
+    // 🔴 26.x 不混淆、malilib 的 26.x 产物本来就是 Mojang 名 ⇒ 普通 implementation 即可。
+    implementation("fi.dy.masa.malilib:${project.malilib_artifact}:${project.malilib_version}") {
+        // conditional-mixin 已被 malilib 打进自己的 jar（META-INF/jars/），
+        // maven 上那份坐标（me.fallenbreath:conditional-mixin-fabric:0.6.4）解析不到也不影响
+        exclude group: 'me.fallenbreath', module: 'conditional-mixin-fabric'
+    }
 
     // 共享纯逻辑（SearchIndex）：jar 打包时把它的 class 一并合并进来
     implementation project(':common')

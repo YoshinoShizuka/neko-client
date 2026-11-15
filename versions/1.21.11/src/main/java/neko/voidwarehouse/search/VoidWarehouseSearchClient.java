@@ -1,5 +1,8 @@
 package neko.voidwarehouse.search;
 
+import fi.dy.masa.malilib.config.ConfigManager;
+import fi.dy.masa.malilib.registry.Registry;
+import fi.dy.masa.malilib.util.data.ModInfo;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -32,8 +35,15 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         // 配置先读：后面所有门禁都看它（文件不存在会就地写一份模板）
-        SearchConfig.load();
-        // 两个功能的开关热键（原版按键绑定，玩家可自定义）
+        SearchConfig.loadFromFile();
+
+        // 交给 malilib 管：① 它的 ConfigManager 能替我们触发 load/save；
+        // ② 注册配置界面后，玩家在任意 malilib 模组的配置界面里都能从下拉框跳过来。
+        ConfigManager.getInstance().registerConfigHandler(SearchConfig.MOD_ID, new SearchConfig());
+        Registry.CONFIG_SCREEN.registerConfigScreenFactory(new ModInfo(
+                SearchConfig.MOD_ID, "Neko VoidWarehouse Search", SearchConfigGui::new));
+
+        // 三个热键（两个开关 + 一个开界面）：malilib 的热键体系，界面打开着也响应
         SearchKeybinds.register();
 
         // C2S ×2：客户端要「发」的 payload，两端都得在 serverbound 表里
@@ -75,7 +85,7 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
 
         // 每次进世界重读一次配置：手改过 json 的玩家不用重启游戏，进出一次世界即可生效
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            SearchConfig.load();
+            SearchConfig.loadFromFile();
             LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={}（{}）",
                     SearchConfig.isSearchBoxEnabled() ? "开" : "关",
                     SearchConfig.isFillGestureEnabled() ? "开" : "关",
