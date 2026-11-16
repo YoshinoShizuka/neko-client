@@ -7,7 +7,7 @@
   "neko_client.config.comment.fillCombo": "Hold this, then click a slot in the first 5 content rows to withdraw until\nyour inventory can hold no more (row 6 is navigation; your own inventory and\nhotbar are not fill targets). Combo = exactly one mouse button + any of\nShift / Ctrl / Alt. Since 0.4.7 the default is Ctrl+Alt+right click (BUTTON_2);\nfor left click change the mouse button to BUTTON_1, middle is BUTTON_3.\nOnly these three modifiers work on the keyboard side - Vanilla exposes only\ntheir state; binding a letter/number key marks the combo as unusable (the join\nlog says why). Matching is strict with no button-code tolerance: binding right\nnever triggers on left, and vice versa. The verdict log states the clicked and\nthe bound key code; a wrong region is reported as inventory / hotbar / nav row.\nEmpty = off.",
   "neko_client.config.name.openGui": "Open config GUI",
   "neko_client.config.comment.openGui": "Opens this mod's config screen (toggles and hotkeys live there).",
-  "neko_client.gui.title": "Void Warehouse Search · Settings",
+  "neko_client.gui.title": "NekoCarpet Settings",
   "neko_client.gui.tab.generic": "Generic",
   "neko_client.gui.tab.hotkeys": "Hotkeys",
   "neko_client.hotkeys.category": "Void Warehouse Search",
