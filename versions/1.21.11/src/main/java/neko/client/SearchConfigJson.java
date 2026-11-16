@@ -46,8 +46,14 @@ final class SearchConfigJson {
      *
      * <p>0.4.3 之前这个手势是写死的 Ctrl+Alt+左键。这里若也留空，老玩家升级后
      * 会看到「模组还在、开关还是开、可是按下去什么都不发生」—— 等于把一次
-     * 「可配置化」做成了功能删除。<b>所以默认值就是老行为本身</b>，玩家想改就改、
+     * 「可配置化」做成了功能删除。<b>所以默认值必须是能用的那一击</b>，玩家想改就改、
      * 想彻底关掉就把这一行清空（空串 = 手势关闭）。</p>
+     *
+     * <p>🔴 <b>0.4.7 起默认改成右键（{@code BUTTON_2}）</b>：真机复测确认
+     * 「左键绑定不生效、右键绑定有效」（0.4.6 日志里左键那三次都卡在
+     * `clicked (470,275)/(472,290)/(421,345)` 落在玩家背包/快捷栏，不是内容格；
+     * 但按机主决定，默认直接给能用的那一击）。默认值只影响<b>新生成的配置</b>，
+     * 已有 `keyFillCombo` 的老配置不会被改写。</p>
      *
      * <p>键名是 malilib 的存储串，{@code BUTTON_1} = 鼠标左键、{@code BUTTON_2} = 右键、
      * {@code BUTTON_3} = 中键（26.3 也可写 {@code MOUSE_LEFT} / {@code MOUSE_RIGHT} /
@@ -55,10 +61,11 @@ final class SearchConfigJson {
      * （26.3：左 -99 / 右 -97；26.2 / 26.1.x / 1.21.11：左 -100 / 右 -99）——
      * 名字由各自的 malilib 解释，所以<b>写字符串一份就够，不必按版本分叉</b>。</p>
      *
-     * <p>0.4.6 起判据严格匹配：绑 {@code BUTTON_1} 就<b>只有左键</b>触发，右键 / 中键
-     * 一律不认。想用右键请把这一项显式改成 {@code BUTTON_2}，不再有任何按钮号容错。</p>
+     * <p>判据严格匹配（0.4.6 起）：绑 {@code BUTTON_2} 就<b>只有右键</b>触发，
+     * 左键 / 中键一律不认。想换回左键就把这一项改成 {@code BUTTON_1}；
+     * 不存在任何按钮号容错。</p>
      */
-    static final String DEFAULT_KEY_FILL_COMBO = "LEFT_CONTROL,LEFT_ALT,BUTTON_1";
+    static final String DEFAULT_KEY_FILL_COMBO = "LEFT_CONTROL,LEFT_ALT,BUTTON_2";
 
     private SearchConfigJson() {
     }
@@ -125,7 +132,7 @@ final class SearchConfigJson {
                 {
                   "_readme": "两个功能的开关 + 四个热键。改完保存后重进一次世界即生效（游戏内按热键切换是立刻生效的）。",
                   "_readme_keys": "开关热键默认全部留空（未绑定），需要自己绑一个：进游戏后按配置界面的热键，或在任意 malilib 模组的配置界面右上角下拉框里选本模组。写法是 malilib 的键名：单个键写 H，组合键写 LEFT_CONTROL,LEFT_ALT，鼠标键写 BUTTON_1。",
-                  "_readme_fillCombo": "keyFillCombo 是「取满手势」的组合键，必须恰好包含一个鼠标键：BUTTON_1 = 左键、BUTTON_2 = 右键、BUTTON_3 = 中键（26.3 也可写 MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE）。默认 LEFT_CONTROL,LEFT_ALT,BUTTON_1 就是老版本的 Ctrl+Alt+左键。0.4.6 起绑什么键就是什么键：绑左键时右键不会触发，想用右键请把 BUTTON_1 改成 BUTTON_2。写成空字符串 = 清空 = 关掉这个手势（开关开着也不响应）。",
+                  "_readme_fillCombo": "keyFillCombo 是「取满手势」的组合键，必须恰好包含一个鼠标键：BUTTON_1 = 左键、BUTTON_2 = 右键、BUTTON_3 = 中键（26.3 也可写 MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE）。0.4.7 起默认 LEFT_CONTROL,LEFT_ALT,BUTTON_2 = Ctrl+Alt+右键；想用左键就把它改成 BUTTON_1。判据严格匹配：绑右键时左键不会触发，反之亦然。只对前 5 行内容格生效（第 6 行是导航行，玩家背包/快捷栏不算）。写成空字符串 = 清空 = 关掉这个手势（开关开着也不响应）。",
                   "searchBox": %s,
                   "fillGesture": %s,
                   "keySearchBox": "%s",

@@ -168,7 +168,7 @@ class SearchConfigJsonTest {
     // ------------------------------------------------------------ E 组：语义判据
 
     @Test
-    @DisplayName("E1 默认值：两个功能都开、三条开关热键未绑定、取满组合键默认=老行为")
+    @DisplayName("E1 默认值：两个功能都开、三条开关热键未绑定、取满组合键默认=Ctrl+Alt+右键")
     void defaultsAreBothEnabledNoHotkeys() {
         SearchConfigJson.Values values = SearchConfigJson.Values.defaults();
         assertAll(
@@ -177,10 +177,11 @@ class SearchConfigJsonTest {
                 () -> assertEquals("", values.keySearchBox(), "搜索框开关默认应未绑定"),
                 () -> assertEquals("", values.keyFillGesture(), "取满开关默认应未绑定"),
                 () -> assertEquals("", values.keyOpenGui(), "开界面默认应未绑定"),
-                // 🔴 唯一的例外：0.4.3 把写死的 Ctrl+Alt+左键 改成可配置，默认值必须
-                // 等于老行为，否则老玩家升级后「功能还在、按下去没反应」
-                () -> assertEquals("LEFT_CONTROL,LEFT_ALT,BUTTON_1", values.keyFillCombo(),
-                        "取满组合键的默认值必须是老版本的 Ctrl+Alt+左键"));
+                // 🔴 唯一的例外：取满组合键必须有默认值，否则玩家看到「功能开着却没反应」。
+                // 0.4.7 起默认改成右键（真机确认左键绑定不生效、右键有效），
+                // 默认值只影响新生成的配置，已有 keyFillCombo 不会被改写。
+                () -> assertEquals("LEFT_CONTROL,LEFT_ALT,BUTTON_2", values.keyFillCombo(),
+                        "0.4.7 起取满组合键默认 Ctrl+Alt+右键（BUTTON_2）"));
     }
 
     @Test
@@ -243,7 +244,7 @@ class SearchConfigJsonTest {
                 () -> assertTrue(bound.contains("\"keyFillCombo\": \"BUTTON_1\""), "组合键必须加引号"),
                 () -> assertTrue(unbound.contains("\"keySearchBox\": \"\""), "未绑定要写成空串"),
                 () -> assertFalse(unbound.contains("null"), "不能落成 null"),
-                () -> assertTrue(unbound.contains("\"keyFillCombo\": \"LEFT_CONTROL,LEFT_ALT,BUTTON_1\""),
+                () -> assertTrue(unbound.contains("\"keyFillCombo\": \"LEFT_CONTROL,LEFT_ALT,BUTTON_2\""),
                         "组合键默认必须落盘，玩家才知道它不是空的、可以改"));
     }
 

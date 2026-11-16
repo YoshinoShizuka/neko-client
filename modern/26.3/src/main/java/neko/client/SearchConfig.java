@@ -81,7 +81,8 @@ public final class SearchConfig implements IConfigHandler {
             SearchConfigJson.DEFAULT_KEY_FILL_GESTURE, HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
-     * 取满手势的<b>组合键</b>（默认 Ctrl + Alt + 左键，与 0.4.2 写死的行为一致）。
+     * 取满手势的<b>组合键</b>（0.4.7 起默认 Ctrl + Alt + 右键；只影响新生成的配置，
+     * 已有的 {@code keyFillCombo} 不会被改写。想用左键就把鼠标键改成 {@code BUTTON_1}）。
      *
      * <h2>为什么它是 {@code ConfigHotkey} 而不是又一个 {@code ConfigBooleanHotkeyed}</h2>
      * <p>它<b>不再是一个开关</b>：开关是 {@link #FILL_GESTURE}。这一条只回答

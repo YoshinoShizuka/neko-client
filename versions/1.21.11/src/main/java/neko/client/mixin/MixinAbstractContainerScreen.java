@@ -213,8 +213,9 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
      * 全由服务端现算）。
      *
      * <h2>组合键从哪来</h2>
-     * <p>{@code config/neko-client.json} 的 {@code keyFillCombo}，默认
-     * {@code LEFT_CONTROL,LEFT_ALT,BUTTON_1}（= 0.4.2 及以前写死的 Ctrl+Alt+左键）。
+     * <p>{@code config/neko-client.json} 的 {@code keyFillCombo}，0.4.7 起默认
+     * {@code LEFT_CONTROL,LEFT_ALT,BUTTON_2}（= Ctrl+Alt+右键；左键绑定同样受支持，
+     * 把鼠标键改成 {@code BUTTON_1} 即可）。
      * 判据在 {@link neko.client.SearchConfig#isFillComboHeld(int, boolean, boolean, boolean)}，
      * <b>本类不认识 Ctrl / Alt / 左键里的任何一个</b> —— 玩家绑什么就是什么，
      * 本类只负责把「实际点下的按钮号」+「这一刻的修饰键掩码」递过去。</p>
@@ -272,8 +273,16 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         }
         Slot slot = voidwarehouseSearch$slotAt(event);
         if (slot == null) {
-            neko.client.SearchConfig.audit("取满中止：点击坐标 ({}, {}) 没落在 0..{} 的内容格上",
-                    event.x(), event.y(), CONTENT_SLOTS);
+            // 🔴 0.4.7：只写「没落在 0..45」玩家看不懂 —— 0.4.6 真机上三次左键都落在
+            // 玩家背包（relY≈146/161/216），日志却只说「不在内容格」，于是被当成
+            // 「左键失效」。这里把界面原点、相对坐标和区域名一起打出来，一看就能对照界面。
+            double relX = event.x() - this.leftPos;
+            double relY = event.y() - this.topPos;
+            neko.client.SearchConfig.audit(
+                    "取满中止：点击 ({}, {}) 不在内容格（界面原点=({}, {}) 相对=({}, {}) 区域={}）"
+                            + " —— 取满只认前 {} 格（前 5 行内容区）",
+                    event.x(), event.y(), this.leftPos, this.topPos,
+                    relX, relY, voidwarehouseSearch$regionOf(relX, relY), CONTENT_SLOTS);
             return;
         }
         if (slot.getItem().isEmpty()) {
@@ -315,6 +324,44 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
             }
         }
         return null;
+    }
+
+    /**
+     * 把点击的相对坐标翻译成「能对照界面」的区域名，只给「没落在内容格」那条日志用。
+     *
+     * <p>坐标全部相对界面左上角（{@link #leftPos} / {@link #topPos}），数值取自原版
+     * 大箱子布局：内容 5 行在 y=18..106、第 6 行导航在 y=108..124、玩家背包在
+     * y=140..192、快捷栏在 y=198..214，界面高 222。服务端的
+     * {@code VoidWarehouseData.CONTENT_ROWS = 5} / {@code NAV_START = 45} 与此一致。</p>
+     */
+    @Unique
+    private String voidwarehouseSearch$regionOf(double relX, double relY) {
+        if (relX < 0 || relX >= this.imageWidth) {
+            return "界面左右之外（边框外）";
+        }
+        if (relY < 0) {
+            return "界面上方（搜索框 / 边框）";
+        }
+        if (relY < 17) {
+            return "顶部边框";
+        }
+        if (relY < 107) {
+            // 走到这里说明纵坐标在内容行上，但横坐标落在列与列之间的空隙
+            return "内容行内、但不在任何一列上（列间空隙 / 左右边框）";
+        }
+        if (relY < 125) {
+            return "第 6 行导航行（不是内容格）";
+        }
+        if (relY < 139) {
+            return "容器与背包之间的空隙";
+        }
+        if (relY < 193) {
+            return "玩家背包（不是仓库内容格）";
+        }
+        if (relY < 215) {
+            return "快捷栏（不是仓库内容格）";
+        }
+        return "界面下方";
     }
 
     /**

@@ -4,7 +4,7 @@
   "neko_client.config.name.fillGesture": "取满手势",
   "neko_client.config.comment.fillGesture": "在虚空仓库界面里按住「取满组合键」再点物品格：取出到背包放不下为止。\n常规模式给纯散货，潜影盒模式给满盒。按哪个键在「快捷键」页改。",
   "neko_client.config.name.fillCombo": "取满组合键",
-  "neko_client.config.comment.fillCombo": "按住它、再点仓库里的物品格 = 把这一格取到背包放不下为止。\n组合键 = 恰好一个鼠标键 + 任意几个 Shift / Ctrl / Alt（默认 Ctrl+Alt+左键）。\n键盘那一半只支持这三个修饰键：原版只暴露它们的状态，绑字母/数字键会被判为「组合键不可用」（进服日志会写明原因）。\n0.4.6 起绑什么键就是什么键：绑左键（BUTTON_1 / MOUSE_LEFT）就只有左键生效，右键 / 中键 / 侧键一律不触发，没有任何按钮号容错。\n想用右键请把鼠标键显式改成 BUTTON_2（26.3 也可写 MOUSE_RIGHT），中键是 BUTTON_3。判据日志会写明「点的是键码 X，绑定的是 Y」。清空 = 关掉这个手势。",
+  "neko_client.config.comment.fillCombo": "按住它、再点仓库前 5 行的物品格 = 把这一格取到背包放不下为止（第 6 行是导航行，玩家背包/快捷栏不算）。\n组合键 = 恰好一个鼠标键 + 任意几个 Shift / Ctrl / Alt。0.4.7 起默认 Ctrl+Alt+右键（BUTTON_2）；想用左键就把鼠标键改成 BUTTON_1，中键是 BUTTON_3。\n键盘那一半只支持这三个修饰键：原版只暴露它们的状态，绑字母/数字键会被判为「组合键不可用」（进服日志会写明原因）。\n判据严格匹配、没有任何按钮号容错：绑右键时左键不会触发，反之亦然。判据日志会写明「点的是键码 X，绑定的是 Y」；点错区域会写明「区域=玩家背包 / 快捷栏 / 导航行」。清空 = 关掉这个手势。",
   "neko_client.config.name.openGui": "打开配置界面",
   "neko_client.config.comment.openGui": "打开本模组的配置界面（开关与热键都在里面改）。",
   "neko_client.gui.title": "虚空仓库搜索 · 设置",
