@@ -5,8 +5,9 @@
 1. **搜索框** —— 支持**中文 / 拼音全拼 / 拼音首字母 / 注册名**筛选物品。服务端 GUI 一个字节不变，纯原版玩家零感知。
 2. **取满手势** —— 按住组合键 + 点一格，取出到背包放不下为止。常规模式给**纯散货**，潜影盒模式给**满盒**；装多少由服务端按你的真实背包现算。
 3. **配方本浏览、搜索与删除**（0.4.8 起，0.5.0 重做界面）—— 按热键打开，每行有**物品图标** +
-   「产物 × 产出数 ← 原料 ×数量」；一整本**连续滚动**（滚到底自动续拉，不再翻页），
-   顶部搜索框按名字/注册名找产物，**匹配得最准的置顶**。逐条删除（点两次确认）。
+   「产物 × 产出数 ← 原料 ×数量」；一整本**连续滚动**（滚到底自动续拉，不再翻页；
+   一次显示多少条按屏幕高度现算），
+   顶部搜索框支持**中文 / 拼音 / 首字母 / 模糊拼音 / 注册名**，**匹配得最准的置顶**。逐条删除（点两次确认）。
    一份本子全服共用，删一条对所有人生效。
 4. **独立开关 + 可自定义热键** —— 两个功能各一套，由 **malilib**（MiniHUD / Litematica 那套）管，设置落 `config/neko-client.json`。
 
@@ -50,8 +51,8 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.0.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.5.0.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.1.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.5.1.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -103,9 +104,14 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 ```
 
 - **图标 + 连续滚动**（0.5.0）：产物图标在文字左侧，产出数标在图标角上（同背包数字）。
-  一次要 32 条，滚到还剩 6 行自动续拉；报「已显示 32 / 137 条」，页码不再进界面。
-- **搜索**（0.5.0）：顶部输入本地化名或 id（`铁剑` / `iron` / `sword` 都行），250 ms 防抖后把命中的
-  **产物 id 白名单**发服务端重查，按匹配度置顶（完全相等 > 前缀 > 包含 > 只命中 id）。
+  一次要 32 条（服务端上限）；**预取裕量按屏幕现算**（0.5.1：可见行数 = 列表高度 ÷ 行高，
+  裕量 = max(4, 可见行数 / 2)）—— 大屏提前拉得多，小屏省流量，滚到底不会「停下等包」。
+  报「已显示 32 / 137 条」，页码不再进界面。
+- **搜索**（0.5.0；0.5.1 加模糊拼音）：顶部输入本地化名、拼音、首字母或 id
+  （`铁剑` / `tiesi` / `ts` / `iron` 都行），250 ms 防抖后把命中的**产物 id 白名单**发服务端重查，
+  按匹配度置顶：**名字完全相等 > 前缀 > 包含 > 拼音 > 只命中 id**。
+  **模糊拼音**：翘舌归平舌（zh/ch/sh→z/c/s）、前后鼻音归一（ing/ang/eng→in/an/en）、
+  n/l/r 归一组、f/h 归一组 —— 打 `niuhuang` 也能搜到硫磺（liuhuang），`zurou` 能搜到猪肉（zhurou）。
   只搜产物不搜原料；搜到 0 个时客户端直接拦住（服务端把空名单当「不过滤」，发出去会拉回整本）。
 - **删除要点两次**：第一次变「确认删除？」，3 秒内再点才真发。全服共用、**没有撤销**；
   删完同一 tick 就不可合成，合成成功一次又会记回来（`recipeId` 由内容算出）。
@@ -120,7 +126,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 配置 20 + 组合键 18 + 配方本 36（排序/预取/防抖/确认）= 74 条
+.\gradlew.bat :modern:26.3:test        REM 配置 20 + 组合键 18 + 配方本 43（含拼音/模糊拼音 6 + 动态裕量 1）= 81 条
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -129,7 +135,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **1168 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **1193 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
