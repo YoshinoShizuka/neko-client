@@ -116,7 +116,15 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
 
     @Override
     protected int getBrowserHeight() {
-        return Math.max(72, this.getScreenHeight() - 100 - this.hintSpace());
+        // 🔴 按「整行数」从按钮行向上反推（0.5.1 布局修复）：以前写死 screenHeight - 100，
+        //    与按钮行之间固定空 30px，再叠加行数取整的余数（最多 23px），底部最多空约 50px。
+        //    现在可见几行就给多高：条目起点 = 列表顶边 + CONTENT_OVERHEAD（搜索框 23 + padding 4），
+        //    列表底边（= 最后一行 + 4）始终贴住按钮行上方 4px，不再有固定预留。
+        int top = LIST_Y + this.hintSpace();
+        int bottom = this.getScreenHeight() - 30;   // 按钮行（高 20，y = H-26）上方留 4px
+        int rows = Math.max(1, (bottom - top - WidgetListRecipe.CONTENT_OVERHEAD)
+                / RecipeBrowseModel.ENTRY_HEIGHT);
+        return rows * RecipeBrowseModel.ENTRY_HEIGHT + WidgetListRecipe.CONTENT_OVERHEAD;
     }
 
     @Override
@@ -195,8 +203,10 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
 
         // 🔴 可见行数每帧现算（resize 会变）：预取裕量、以及「要不要再拉一页才能铺满屏幕」
         //    都由它决定 —— 一次显示多少条跟着屏幕走，不再写死。
-        RecipeClientState.setVisibleRows(
-                Math.max(1, this.getBrowserHeight() / RecipeBrowseModel.ENTRY_HEIGHT));
+        //    高度里含 CONTENT_OVERHEAD（搜索框 + padding），要扣掉才是真正的条目行数。
+        RecipeClientState.setVisibleRows(Math.max(1,
+                (this.getBrowserHeight() - WidgetListRecipe.CONTENT_OVERHEAD)
+                        / RecipeBrowseModel.ENTRY_HEIGHT));
 
         // 🔴 先判超时与搜索防抖：没有它，服务端不回包时这里会永远转圈
         RecipeClientState.tickProbe(this.filterText);

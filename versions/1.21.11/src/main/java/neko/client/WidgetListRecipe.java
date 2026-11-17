@@ -40,6 +40,17 @@ public class WidgetListRecipe extends WidgetListBase<RecipePagePayload.Entry, Wi
     private static final int SEARCH_BAR_HEIGHT = 20;
     private static final int SEARCH_BAR_OFFSET = 23;
 
+    /**
+     * 列表内容区里<b>非条目</b>占掉的竖直空间：搜索框 23 + {@code browserPaddingY} 4。
+     *
+     * <p>javap 实证（malilib {@code WidgetListBase}）：条目起点 = {@code posY + 27}，
+     * 滚动条底边 = {@code posY + browserHeight - 4}。所以
+     * {@code browserHeight = 可见行数 × ENTRY_HEIGHT + CONTENT_OVERHEAD} 时，
+     * 最后一行正好贴住列表底边 —— 界面靠这个常量按「整行数」反推高度
+     * （见 {@code RecipeBrowseGui#getBrowserHeight}）。</p>
+     */
+    public static final int CONTENT_OVERHEAD = SEARCH_BAR_OFFSET + 4;
+
     public WidgetListRecipe(int x, int y, int width, int height) {
         super(x, y, width, height, null);
         // 一行 24：图标 16 + 标题行 + 原料行，上下留白。
