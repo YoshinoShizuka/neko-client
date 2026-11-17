@@ -3,7 +3,7 @@
   "id": "neko_client",
   "version": "${version}",
   "name": "Neko Client",
-  "description": "虚空仓库客户端增强：搜索框（中文 / 拼音 / 注册名）+ Ctrl+Alt+右键 把一格物品取到背包放不下为止（常规模式纯散货、潜影盒模式满盒；组合键可在配置界面改，想用左键就绑 BUTTON_1）。开关与热键由 malilib 提供（必需）。纯客户端模组，服务端需搭配 carpet-Neko-Addition 1.0.16+。",
+  "description": "虚空仓库客户端增强：① 搜索框（中文 / 拼音 / 注册名）；② Ctrl+Alt+右键 把一格物品取到背包放不下为止（常规模式纯散货、潜影盒模式满盒；组合键可在配置界面改，想用左键就绑 BUTTON_1）；③ 配方本浏览与删除（要先开着虚空仓库界面）。开关与热键由 malilib 提供（必需）。纯客户端模组，服务端需搭配 carpet-Neko-Addition 1.0.17+（配方本要 1.0.17+）。",
   "authors": [
     "Akirono"
   ],
