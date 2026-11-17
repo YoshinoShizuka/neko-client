@@ -127,7 +127,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **1063 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **1073 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
