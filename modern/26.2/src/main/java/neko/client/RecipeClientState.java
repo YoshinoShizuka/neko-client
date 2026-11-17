@@ -354,8 +354,17 @@ public final class RecipeClientState {
         setSearch("");
     }
 
-    /** 换排序：回到第一页重取 */
+    /**
+     * 换排序：回到第一页重取。
+     *
+     * <p>🔴 这里有审计日志：真机排障需要它来区分「点击根本没进 listener」（日志里什么都没有）
+     * 和「进了但 reload 没接住」（有这行、没有 page 0）。按钮文字也是点击时才更新的
+     * （initGui 里算的那份是死的）。</p>
+     */
     public static void setSort(int newSort) {
+        LOGGER.info("[recipe] sort: 请求 {}（当前 {}）",
+                newSort == RecipeQueryPayload.SORT_OUTPUT ? "按名字" : "最近学习",
+                sort == RecipeQueryPayload.SORT_OUTPUT ? "按名字" : "最近学习");
         if (newSort == sort) {
             return;
         }

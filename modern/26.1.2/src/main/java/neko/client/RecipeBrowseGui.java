@@ -144,14 +144,20 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         int x = 10;
         int btnHeight = 20;
 
-        // 排序切换：服务端两种稳定序，客户端只报一个枚举
+        // 排序切换：服务端两种稳定序，客户端只报一个枚举。
+        // 🔴 按钮文字必须点击时更新：initGui 里算的那份是死的，点了不更新 = 「看起来没反应」
+        //    的第一嫌疑（列表顺序其实变了，但按钮还写着旧字样）。
         boolean byName = RecipeClientState.sort() == RecipeQueryPayload.SORT_OUTPUT;
-        this.addButton(new ButtonGeneric(x, y, 96, btnHeight,
+        ButtonGeneric sortButton = new ButtonGeneric(x, y, 96, btnHeight,
                         "排序：" + (byName ? "按名字" : "最近学习"),
-                        "按名字 = 产物 id 字典序（稳定）；最近学习 = 刚学会的在最前"),
-                (base, mouseButton) -> RecipeClientState.setSort(byName
-                        ? RecipeQueryPayload.SORT_RECENT
-                        : RecipeQueryPayload.SORT_OUTPUT));
+                        "按名字 = 产物 id 字典序（稳定）；最近学习 = 刚学会的在最前");
+        this.addButton(sortButton, (base, mouseButton) -> {
+            RecipeClientState.setSort(byName
+                    ? RecipeQueryPayload.SORT_RECENT
+                    : RecipeQueryPayload.SORT_OUTPUT);
+            sortButton.setDisplayString("排序：" + (RecipeClientState.sort()
+                    == RecipeQueryPayload.SORT_OUTPUT ? "按名字" : "最近学习"));
+        });
         x += 100;
 
         // 清空搜索：搜索框是 malilib 的控件，没有对外的 setter，只能通过列表控件转发
