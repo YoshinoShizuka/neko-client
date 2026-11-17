@@ -31,7 +31,8 @@ import java.util.List;
  *       现在滚到底自动续拉（{@link RecipeClientState#noteVisibleRow}），页码不再进界面。</li>
  *   <li><b>加了搜索框</b>：名字匹配只能在客户端做（专用服务器没有中文语言表），
  *       匹配出的产物 id 白名单发给服务端重查，结果按匹配度置顶
- *       （{@link RecipeBrowseModel#matchRank}）。</li>
+ *       （{@link RecipeBrowseModel#matchRank}）。0.5.1 起支持拼音 / 首字母 /
+ *       <b>模糊拼音</b>（zh→z、前后鼻音归一、n/l/r 与 f/h 各归一组）。</li>
  *   <li><b>每行加了物品图标</b>：两行密排文字里认东西太慢（{@link WidgetListRecipeEntry}）。</li>
  * </ol>
  *
@@ -191,6 +192,11 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         if (list != null) {
             this.filterText = list.filterText();
         }
+
+        // 🔴 可见行数每帧现算（resize 会变）：预取裕量、以及「要不要再拉一页才能铺满屏幕」
+        //    都由它决定 —— 一次显示多少条跟着屏幕走，不再写死。
+        RecipeClientState.setVisibleRows(
+                Math.max(1, this.getBrowserHeight() / RecipeBrowseModel.ENTRY_HEIGHT));
 
         // 🔴 先判超时与搜索防抖：没有它，服务端不回包时这里会永远转圈
         RecipeClientState.tickProbe(this.filterText);

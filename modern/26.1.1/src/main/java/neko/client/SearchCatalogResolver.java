@@ -37,6 +37,15 @@ public final class SearchCatalogResolver {
      */
     private static final Map<String, String> NAME_CACHE = new HashMap<>();
 
+    /**
+     * id → {@code 全拼\u0000首字母}。
+     *
+     * <p>和 {@link #NAME_CACHE} 同一个线程模型（只在主线程访问）、同一条生命周期
+     * （{@link #clearCache()} 一起清）。合成一个串而不是两个 Map，是为了少一次
+     * 哈希查找 —— 列表每行、白名单每条都要拿它。</p>
+     */
+    private static final Map<String, String> PINYIN_CACHE = new HashMap<>();
+
     private SearchCatalogResolver() {
     }
 
@@ -80,6 +89,46 @@ public final class SearchCatalogResolver {
     }
 
     /**
+     * 显示名的<b>全拼</b>（无声调、无分隔，{@code 铁锭 → tieding}；解析不出时是空串）。
+     *
+     * <p>0.5.1 起配方本搜索支持拼音 / 首字母 / 模糊拼音，token 直接复用
+     * {@link SearchIndex#of} —— 仓库搜索框用的就是它，两处永远不会算出两套读音。
+     * 拼音与名字一起缓存：多音字取 jpinyin 词库默认读音（与仓库搜索同一条误差口径）。</p>
+     */
+    public static String pinyinFullOf(String itemId) {
+        return tokensOf(itemId)[0];
+    }
+
+    /** 显示名的拼音首字母（{@code 铁锭 → td}）；解析不出时是空串 */
+    public static String pinyinInitialsOf(String itemId) {
+        return tokensOf(itemId)[1];
+    }
+
+    /**
+     * {@code [全拼, 首字母]}，走同一份缓存。
+     *
+     * <p>失败（jpinyin 抛 {@code PinyinException} / 名字解析不出）时两项都是空串，
+     * 搜索会自动退化成「名字 + id」两条路，绝不让一个词条把整份白名单建挂。</p>
+     */
+    private static String[] tokensOf(String itemId) {
+        if (itemId == null || itemId.isEmpty()) {
+            return new String[]{"", ""};
+        }
+        String cached = PINYIN_CACHE.get(itemId);
+        if (cached != null) {
+            int sep = cached.indexOf('\u0000');
+            return new String[]{cached.substring(0, sep), cached.substring(sep + 1)};
+        }
+        String name = displayNameOf(itemId);
+        SearchIndex.Entry entry = (name == null || name.isBlank())
+                ? null : SearchIndex.of(itemId, name);
+        String full = entry == null ? "" : entry.pinyinFull();
+        String initials = entry == null ? "" : entry.pinyinInitials();
+        PINYIN_CACHE.put(itemId, full + '\u0000' + initials);
+        return new String[]{full, initials};
+    }
+
+    /**
      * 物品 id → 可直接交给 {@code GuiContext#renderItem} 的栈。
      *
      * <p>解析不出来时返回 {@link ItemStack#EMPTY}（渲染出来是空气，不会崩）——
@@ -93,8 +142,9 @@ public final class SearchCatalogResolver {
         return new ItemStack(BuiltInRegistries.ITEM.getValue(key));
     }
 
-    /** 换语言（{@code LanguageManager} 重新加载）后显示名会变，界面重开时清一次 */
+    /** 换语言（{@code LanguageManager} 重新加载）后显示名与读音都会变，界面重开时清一次 */
     public static void clearCache() {
         NAME_CACHE.clear();
+        PINYIN_CACHE.clear();
     }
 }

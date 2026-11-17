@@ -17,7 +17,8 @@ import java.util.Locale;
  * 而且一页只有 8 条时，137 条的本子要按 18 次。现在的做法是：</p>
  * <ol>
  *   <li>{@link #PAGE_SIZE} 一次要满 32 条（服务端上限），列表连续滚动；</li>
- *   <li>滚到<b>还剩 {@link #PREFETCH_ROWS} 行</b>时就悄悄要下一页，用户看到的是「越滚越多」；</li>
+ *   <li>滚到「池底 - 预取裕量」时就悄悄要下一页，用户看到的是「越滚越多」；
+ *       裕量按<b>当前屏幕能显示几行</b>现算（0.5.1 起，不再写死）；</li>
  *   <li>页码完全不进界面 —— 玩家不需要知道它存在（{@link #statusLine} 只报「已显示 X / Y 条」）。</li>
  * </ol>
  *
@@ -26,7 +27,13 @@ import java.util.Locale;
  * 所以匹配一定发生在客户端。但「匹配上了」不等于「玩家想要的那条」：
  * 搜「铁」时，{@code 铁剑} 和其它 40 个带铁的产物都会进白名单，而服务端只按 id 字典序返回 ——
  * 玩家第一屏看到的可能是「铁块」。{@link #matchRank} 给出的分数就是<b>置顶依据</b>：
- * 名字完全相等 &gt; 名字前缀 &gt; 名字包含 &gt; id 包含，同分再按名字和 recipeId 排。</p>
+ * 名字完全相等 &gt; 名字前缀 &gt; 名字包含 &gt; 拼音（含模糊拼音）&gt; id 包含，
+ * 同分再按名字和 recipeId 排。</p>
+ *
+ * <h2>0.5.1：模糊拼音怎么折</h2>
+ * <p>zh/ch/sh 归平舌、前后鼻音归一（ing/ang/eng）、n/l/r 与 f/h 各归一组
+ * （见 {@link #fuzzyKey}）。两边（查询串与拼音 token）都折到同一个键上再比，
+ * 而不是把查询展开成变体逐个试 —— 归一化是 O(n)，展开是组合爆炸。</p>
  *
  * <h2>为什么需要「点两次才删」</h2>
  * <p>服务端把删除做成<b>全局真删</b>（一份本子全服共用），点错一次的代价是所有人少一条配方，
@@ -48,12 +55,19 @@ public final class RecipeBrowseModel {
     public static final int SERVER_MAX_PAGE_SIZE = 32;
 
     /**
-     * 还剩多少行没显示时就去要下一页。
-     *
-     * <p>太小（1 行）= 滚到底会停一下等下个包；太大 = 一开界面就白拉一堆。
-     * 6 行大约是一屏的 1/3，正常滚动速度下用户察觉不到接缝。</p>
+     * 一行的高度（像素）。列表行高与「可见行数」的换算都靠它 —— 改了这里，
+     * {@code WidgetListRecipe} 与界面的可见行推算会跟着变（这正是 0.5.1 的主题：
+     * <b>一次显示多少条不再写死</b>，按当前屏幕高度除以行高现算）。
      */
-    public static final int PREFETCH_ROWS = 6;
+    public static final int ENTRY_HEIGHT = 24;
+
+    /**
+     * 预取裕量的下限（行）。
+     *
+     * <p>0.5.0 写死 6 行；0.5.1 改成 {@code max(这个值, 可见行数 / 2)} ——
+     * 屏幕越高，要提前拉的就越多，否则大屏滚到底会「停下等包」。</p>
+     */
+    public static final int PREFETCH_MIN_ROWS = 4;
 
     /**
      * 搜索框停止输入多久之后才真去问服务端。
@@ -72,8 +86,10 @@ public final class RecipeBrowseModel {
     public static final int RANK_PREFIX = 1;
     /** 匹配度：显示名包含搜索词 */
     public static final int RANK_CONTAINS = 2;
+    /** 匹配度：拼音 / 首字母 / 模糊拼音命中（对中文用户，这比 id 命中更有用） */
+    public static final int RANK_PINYIN = 3;
     /** 匹配度：只有物品 id 包含搜索词（玩家看到的可能是完全不相干的中文名） */
-    public static final int RANK_ID = 3;
+    public static final int RANK_ID = 4;
     /** 完全没匹配上 */
     public static final int RANK_NONE = Integer.MAX_VALUE;
 
@@ -107,12 +123,28 @@ public final class RecipeBrowseModel {
     /**
      * 一条配方对搜索词的匹配度，<b>越小越该置顶</b>。
      *
+     * <p>没有拼音 token 的场合（调用方还没建索引）用三参重载，拼音档永远不命中。</p>
+     *
      * @param query       玩家输入的搜索词（可为空 = 不过滤，恒 {@link #RANK_EXACT}）
      * @param displayName 客户端本地化显示名（可能为 null：客户端不认识这个 id）
      * @param itemId      产物物品 id（全名或裸 path 都行）
      * @return {@link #RANK_EXACT} … {@link #RANK_ID}，或 {@link #RANK_NONE}
      */
     public static int matchRank(String query, String displayName, String itemId) {
+        return matchRank(query, displayName, itemId, "", "");
+    }
+
+    /**
+     * 同上，但带拼音 token（0.5.1 起支持拼音 / 首字母 / <b>模糊拼音</b>）。
+     *
+     * <p>档位顺序是有讲究的：拼音命中排在 id 命中<b>之前</b> —— 对中文用户，
+     * 「打 tieding 命中铁锭」比「打 ingot 命中」更接近他想要的东西。</p>
+     *
+     * @param pinyinFull     显示名的全拼（无声调、无分隔，{@code 铁锭 → tieding}；空串 = 没有）
+     * @param pinyinInitials 显示名的拼音首字母（{@code 铁锭 → td}；空串 = 没有）
+     */
+    public static int matchRank(String query, String displayName, String itemId,
+                                String pinyinFull, String pinyinInitials) {
         String q = normalizeQuery(query);
         if (q.isEmpty()) {
             return RANK_EXACT;
@@ -131,6 +163,9 @@ public final class RecipeBrowseModel {
         if (name.contains(q)) {
             return RANK_CONTAINS;
         }
+        if (pinyinMatches(q, pinyinFull, pinyinInitials)) {
+            return RANK_PINYIN;
+        }
         String bare = normalizeQuery(bareId(itemId));
         String full = normalizeQuery(itemId);
         if ((!bare.isEmpty() && bare.contains(q)) || (!full.isEmpty() && full.contains(q))) {
@@ -139,24 +174,84 @@ public final class RecipeBrowseModel {
         return RANK_NONE;
     }
 
-    /** 是否匹配（界面/白名单只需要这个布尔） */
+    /** 是否匹配（界面/白名单只需要这个布尔；带拼音 token 的版本） */
+    public static boolean matches(String query, String displayName, String itemId,
+                                  String pinyinFull, String pinyinInitials) {
+        return matchRank(query, displayName, itemId, pinyinFull, pinyinInitials) != RANK_NONE;
+    }
+
+    /** 是否匹配（界面/白名单只需要这个布尔；无拼音 token） */
     public static boolean matches(String query, String displayName, String itemId) {
         return matchRank(query, displayName, itemId) != RANK_NONE;
     }
 
     /**
+     * 拼音这条路上是否命中（全拼与首字母都试，两边都过 {@link #fuzzyKey}）。
+     *
+     * <p>全拼用 {@code startsWith} 或 {@code contains}：拼音串是按字拼起来的、没有分隔符，
+     * 边界处会误伤（{@code tiesi} 里含 {@code esi}），这是模糊搜索本来就要接受的噪音。</p>
+     */
+    private static boolean pinyinMatches(String query, String pinyinFull, String pinyinInitials) {
+        String q = fuzzyKey(query);
+        if (q.isEmpty()) {
+            return false;
+        }
+        String full = fuzzyKey(pinyinFull);
+        String initials = fuzzyKey(pinyinInitials);
+        if (full.isEmpty() && initials.isEmpty()) {
+            return false;
+        }
+        return (!full.isEmpty() && (full.startsWith(q) || full.contains(q)))
+                || (!initials.isEmpty() && (initials.startsWith(q) || initials.contains(q)));
+    }
+
+    /**
+     * 🔴 模糊拼音的<b>归一化</b>：把容易混的声母 / 韵母折到同一个键上，两边都折，
+     * 之后普通字符串比较就行 —— 不需要把查询展开成一组变体再逐个试。
+     *
+     * <p>折法（右边的键为「标准音」）：</p>
+     * <ul>
+     *   <li>翘舌归平：{@code zh→z}、{@code ch→c}、{@code sh→s}</li>
+     *   <li>前后鼻音：{@code ing→in}、{@code ang→an}、{@code eng→en}</li>
+     *   <li>声母混读：{@code r→l→n}（n/l/r 一组）、{@code f→h}（f/h 一组）</li>
+     * </ul>
+     *
+     * <p>顺序很重要：双字先换（否则 {@code zh} 会先被拆成 {@code z}+{@code h}），
+     * {@code r→l} 必须在 {@code l→n} 之前（否则 r 折不到 n 上）。代价是「日 / 热」这类字
+     * 会和 n 组互串 —— 真实输入法的模糊音就是这么设计的，玩家要的正是这个。</p>
+     */
+    public static String fuzzyKey(String raw) {
+        String s = normalizeQuery(raw);
+        if (s.isEmpty()) {
+            return "";
+        }
+        // 双字组合必须在单字之前
+        s = s.replace("zh", "z").replace("ch", "c").replace("sh", "s");
+        s = s.replace("ing", "in").replace("ang", "an").replace("eng", "en");
+        // 单字混读：r 先折到 l，再一起折到 n
+        s = s.replace('r', 'l').replace('l', 'n').replace('f', 'h');
+        return s;
+    }
+
+    /**
      * 滚到第几行时该去要下一页。
+     *
+     * <p>0.5.1 起<b>裕量按屏幕现算</b>：屏幕能显示越多行，就要越早开始预取，
+     * 否则大屏滚到底会出现「停下等包」。不再写死一个行数。</p>
      *
      * @param lastVisibleRow 当前画出来的最后一行的下标（0 基；没有任何行时传 -1）
      * @param loaded         已经拿到的条数
      * @param total          服务端说一共有多少条（白名单过滤后的）
+     * @param visibleRows    当前屏幕能完整显示的行数（界面按 {@link #ENTRY_HEIGHT} 现算）
      * @return {@code true} = 该去要下一页
      */
-    public static boolean shouldPrefetch(int lastVisibleRow, int loaded, int total) {
+    public static boolean shouldPrefetch(int lastVisibleRow, int loaded, int total, int visibleRows) {
         if (loaded <= 0 || loaded >= total) {
             return false;
         }
-        return lastVisibleRow + 1 + PREFETCH_ROWS >= loaded;
+        int rows = Math.max(1, visibleRows);
+        int margin = Math.max(PREFETCH_MIN_ROWS, rows / 2);
+        return lastVisibleRow + 1 + margin >= loaded;
     }
 
     /**

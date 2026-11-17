@@ -25,8 +25,8 @@ import java.util.Set;
  * <p>服务端只给「索引 / 分页 / 删除 / 变更广播」四件事（见
  * {@code carpet-Neko-Addition} 的 {@code docs/方案-配方本浏览与删除（服务端）.md}）。
  * 这里负责把它们接起来，并把结果摊平成界面能直接读的字段 —— <b>不做任何名字匹配</b>，
- * 那是 {@link SearchCatalogResolver} 与 {@link RecipeBrowseModel#matchRank} 的事
- * （只有客户端有中文语言表）。</p>
+ * 那是 {@link SearchCatalogResolver}（含拼音 token，0.5.1 起支持模糊拼音）与
+ * {@link RecipeBrowseModel#matchRank} 的事（只有客户端有中文语言表）。</p>
  *
  * <h2>0.5.0：从「一页 8 条 + 翻页」改成「累加池 + 滚到底续拉」</h2>
  * <p>{@link #entries} 现在是<b>累积</b>的：第 0 页替换、后续页追加（按 {@code recipeId} 去重，
@@ -130,6 +130,12 @@ public final class RecipeClientState {
     private static String search = "";
     /** 界面画出来的最后一行下标（0 基）-1 = 一行都没画 */
     private static int lastVisibleRow = -1;
+    /**
+     * 当前屏幕能完整显示几行。界面按「列表高度 / 行高」每帧现算并塞进来 ——
+     * 预取裕量跟着它走，<b>不再写死</b>：大屏提前拉得多，小屏少拉点省流量。
+     * 默认 10 只是没收到界面报告时的兜底。
+     */
+    private static int visibleRows = 10;
     private static String status = "";
     private static int revision;
 
@@ -371,6 +377,22 @@ public final class RecipeClientState {
     }
 
     /**
+     * 界面每帧报告「当前能完整显示几行」（按列表高度 / 行高现算）。
+     *
+     * <p>resize 之后行数会变，以最后一次报告为准。</p>
+     */
+    public static void setVisibleRows(int rows) {
+        if (rows > 0 && rows != visibleRows) {
+            visibleRows = rows;
+        }
+    }
+
+    /** 只给单测 / 调试用：当前的可见行数 */
+    public static int visibleRows() {
+        return visibleRows;
+    }
+
+    /**
      * 点了一条「删除」。
      *
      * @return {@code true} = 这一次真的发出去了（界面该刷新文字）；
@@ -479,7 +501,7 @@ public final class RecipeClientState {
             requestPage(nextPage);
             return;
         }
-        if (!RecipeBrowseModel.shouldPrefetch(lastVisibleRow, entries.size(), total)) {
+        if (!RecipeBrowseModel.shouldPrefetch(lastVisibleRow, entries.size(), total, visibleRows)) {
             return;
         }
         if (entries.size() >= total) {
@@ -680,7 +702,9 @@ public final class RecipeClientState {
         List<RecipePagePayload.Entry> out = new ArrayList<>(src);
         Comparator<RecipePagePayload.Entry> order = Comparator
                 .comparingInt((RecipePagePayload.Entry e) -> RecipeBrowseModel.matchRank(
-                        search, SearchCatalogResolver.displayNameOf(e.output()), e.output()))
+                        search, SearchCatalogResolver.displayNameOf(e.output()), e.output(),
+                        SearchCatalogResolver.pinyinFullOf(e.output()),
+                        SearchCatalogResolver.pinyinInitialsOf(e.output())))
                 .thenComparing(e -> SearchCatalogResolver.nameOf(e.output()), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(RecipePagePayload.Entry::recipeId);
         out.sort(order);
@@ -724,13 +748,15 @@ public final class RecipeClientState {
         }
         List<String> matched = new ArrayList<>();
         for (String id : outputs) {
-            if (RecipeBrowseModel.matches(q, SearchCatalogResolver.displayNameOf(id), id)) {
+            if (RecipeBrowseModel.matches(q, SearchCatalogResolver.displayNameOf(id), id,
+                    SearchCatalogResolver.pinyinFullOf(id), SearchCatalogResolver.pinyinInitialsOf(id))) {
                 matched.add(id);
             }
         }
         matched.sort(Comparator
                 .comparingInt((String id) -> RecipeBrowseModel.matchRank(
-                        q, SearchCatalogResolver.displayNameOf(id), id))
+                        q, SearchCatalogResolver.displayNameOf(id), id,
+                        SearchCatalogResolver.pinyinFullOf(id), SearchCatalogResolver.pinyinInitialsOf(id)))
                 .thenComparing(id -> SearchCatalogResolver.nameOf(id), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(Comparator.naturalOrder()));
         return List.copyOf(matched);

@@ -399,35 +399,151 @@ class RecipeBrowseModelTest {
     }
 
     @Nested
-    @DisplayName("G 滚动预取（0.5.0 不再翻页）")
+    @DisplayName("G 滚动预取（0.5.0 不再翻页；0.5.1 裕量按屏幕现算）")
     class Prefetch {
+
+        private static final int ROWS = 10;
 
         @Test
         @DisplayName("G1 还差得远时不预取")
         void farFromBottomDoesNotPrefetch() {
-            // 32 条已加载，只画到第 3 行 ⇒ 不该再要下一页
-            assertFalse(RecipeBrowseModel.shouldPrefetch(3, 32, 137));
+            // 32 条已加载、可见 10 行（裕量 = max(4, 10/2) = 5），只画到第 3 行 ⇒ 不该再要
+            assertFalse(RecipeBrowseModel.shouldPrefetch(3, 32, 137, ROWS));
         }
 
         @Test
-        @DisplayName("G2 画到最后 PREFETCH_ROWS 行之内就该去要下一页")
+        @DisplayName("G2 画到裕量之内就该去要下一页（边界两侧各咬一次）")
         void nearBottomPrefetches() {
             int loaded = 32;
-            int lastRow = loaded - RecipeBrowseModel.PREFETCH_ROWS - 1;
-            assertTrue(RecipeBrowseModel.shouldPrefetch(lastRow, loaded, 137));
-            // 再往回一行就不该触发（边界两侧各咬一次）
-            assertFalse(RecipeBrowseModel.shouldPrefetch(lastRow - 1, loaded, 137));
+            int margin = Math.max(RecipeBrowseModel.PREFETCH_MIN_ROWS, ROWS / 2);
+            int lastRow = loaded - margin - 1;
+            assertTrue(RecipeBrowseModel.shouldPrefetch(lastRow, loaded, 137, ROWS));
+            assertFalse(RecipeBrowseModel.shouldPrefetch(lastRow - 1, loaded, 137, ROWS));
         }
 
         @Test
         @DisplayName("G3 已经全部加载、或本来就没内容时，绝不预取")
         void stopsAtEnd() {
             assertAll(
-                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(31, 32, 32), "已加载完"),
-                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(0, 0, 137), "一条都没有"),
-                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(5, 40, 10), "加载超了总数"),
-                    // 一行都没画（-1）但已经有数据：仍按「差 6 行」算，别把首次加载卡住
-                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(-1, 32, 137)));
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(31, 32, 32, ROWS), "已加载完"),
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(0, 0, 137, ROWS), "一条都没有"),
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(5, 40, 10, ROWS), "加载超了总数"),
+                    // 一行都没画（-1）但已经有数据：裕量没吃满就不该触发
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(-1, 32, 137, ROWS)));
+        }
+
+        @Test
+        @DisplayName("G4 大屏要提前拉，小屏可以省（同一份已加载数，裕量随可见行数变）")
+        void marginFollowsScreenSize() {
+            int loaded = 32;
+            // 大屏可见 30 行 ⇒ 裕量 15：画到第 24 行就得开始拉，否则滚到底会停一下等包
+            assertTrue(RecipeBrowseModel.shouldPrefetch(24, loaded, 137, 30),
+                    "大屏（可见 30 行）在剩 8 行时就该预取");
+            assertFalse(RecipeBrowseModel.shouldPrefetch(24, loaded, 137, 4),
+                    "小屏（可见 4 行）同样位置还不该预取");
+            // 裕量有下限：再小的屏也不至于剩 1 行才拉
+            assertTrue(RecipeBrowseModel.shouldPrefetch(27, loaded, 137, 1),
+                    "裕量下限 = PREFETCH_MIN_ROWS");
+            assertFalse(RecipeBrowseModel.shouldPrefetch(26, loaded, 137, 1));
+        }
+    }
+
+    @Nested
+    @DisplayName("I 拼音与模糊拼音（0.5.1）")
+    class Pinyin {
+
+        private static final String TIE_DING_FULL = "tieding";
+        private static final String TIE_DING_INIT = "td";
+
+        @Test
+        @DisplayName("I1 模糊归一：翘舌 / 前后鼻音 / n-l-r / f-h 各归一组")
+        void fuzzyKeyGroups() {
+            assertAll(
+                    () -> assertEquals("zupai", RecipeBrowseModel.fuzzyKey("zhupai"), "zh→z"),
+                    () -> assertEquals("cupai", RecipeBrowseModel.fuzzyKey("chupai"), "ch→c"),
+                    () -> assertEquals("san", RecipeBrowseModel.fuzzyKey("shan"), "sh→s"),
+                    () -> assertEquals("tin", RecipeBrowseModel.fuzzyKey("ting"), "ing→in"),
+                    // f→h 在韵母折叠之后才跑：fang 的最终键是 han（f/h 本来就是一组）
+                    () -> assertEquals("han", RecipeBrowseModel.fuzzyKey("fang"), "ang→an，再 f→h"),
+                    () -> assertEquals("hen", RecipeBrowseModel.fuzzyKey("feng"), "eng→en，再 f→h"),
+                    () -> assertEquals("niu", RecipeBrowseModel.fuzzyKey("liu"), "l→n"),
+                    () -> assertEquals("niu", RecipeBrowseModel.fuzzyKey("riu"), "r→l→n"),
+                    () -> assertEquals("hui", RecipeBrowseModel.fuzzyKey("fui"), "f→h"),
+                    () -> assertEquals("tie", RecipeBrowseModel.fuzzyKey("tie"),
+                            "没有可折的组合时原样返回"),
+                    // 顺序不能错：zh 先折，否则会被拆成 z + h，ang 就折不到了
+                    () -> assertEquals("zan", RecipeBrowseModel.fuzzyKey("zhang")));
+        }
+
+        @Test
+        @DisplayName("I2 全拼命中排 RANK_PINYIN，排在只命中 id 之前")
+        void fullPinyinBeatsId() {
+            assertAll(
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "tieding", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT)),
+                    () -> assertEquals(RecipeBrowseModel.RANK_ID, RecipeBrowseModel.matchRank(
+                            "ingot", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT)),
+                    () -> assertTrue(RecipeBrowseModel.RANK_PINYIN < RecipeBrowseModel.RANK_ID,
+                            "对中文用户，拼音命中比 id 命中更有用"));
+        }
+
+        @Test
+        @DisplayName("I3 首字母命中：td / ts 这类缩写也能搜到")
+        void initialsMatch() {
+            assertAll(
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "td", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT)),
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "ts", "铁丝", "minecraft:iron_wire", "tiesi", "ts")));
+        }
+
+        @Test
+        @DisplayName("I4 模糊拼音：n/l、f/h、翘舌、前后鼻音互串也能命中")
+        void fuzzyPinyinMatches() {
+            assertAll(
+                    // 硫磺 liuhuang，玩家打成 niuhuang（n/l 不分）
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "niuhuang", "硫磺", "minecraft:sulfur", "liuhuang", "lh")),
+                    // 猪肉 zhurou，玩家按平舌打成 zurou（zh→z + r/l→n，两边都折之后相等）
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "zurou", "猪肉", "minecraft:porkchop", "zhurou", "zr")),
+                    // 风 feng，玩家打成 heng（f/h）
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "heng", "风", "minecraft:wind", "feng", "f")),
+                    // 横 heng，玩家打成 feng（反向也要成立）
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "feng", "横", "minecraft:crossbar", "heng", "h")),
+                    // 丁 ding，玩家打成 din（前后鼻音）
+                    () -> assertEquals(RecipeBrowseModel.RANK_PINYIN, RecipeBrowseModel.matchRank(
+                            "din", "丁", "minecraft:nail", "ding", "d")));
+        }
+
+        @Test
+        @DisplayName("I5 名字命中仍然排在拼音命中前面（中文输入优先）")
+        void nameStillBeatsPinyin() {
+            int byName = RecipeBrowseModel.matchRank(
+                    "铁锭", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT);
+            int byPinyin = RecipeBrowseModel.matchRank(
+                    "tieding", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT);
+            assertTrue(byName < byPinyin, "直接打中文应该比打拼音更靠前");
+        }
+
+        @Test
+        @DisplayName("I6 没有拼音 token 时退回旧的三条路，绝不能判成「没匹配」")
+        void missingTokensFallBack() {
+            assertAll(
+                    () -> assertEquals(RecipeBrowseModel.RANK_ID, RecipeBrowseModel.matchRank(
+                            "iron", "铁锭", "minecraft:iron_ingot", "", "")),
+                    () -> assertEquals(RecipeBrowseModel.RANK_NONE, RecipeBrowseModel.matchRank(
+                            "tieding", "铁锭", "minecraft:iron_ingot", "", ""),
+                            "没建拼音索引时打拼音确实搜不到 —— 但这是退化的结果，不是崩溃"),
+                    () -> assertEquals(RecipeBrowseModel.RANK_EXACT, RecipeBrowseModel.matchRank(
+                            "铁锭", "铁锭", "minecraft:iron_ingot", "", "")),
+                    // matches() 的带拼音重载也要能用
+                    () -> assertTrue(RecipeBrowseModel.matches(
+                            "td", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT)),
+                    () -> assertFalse(RecipeBrowseModel.matches(
+                            "钻石", "铁锭", "minecraft:iron_ingot", TIE_DING_FULL, TIE_DING_INIT)));
         }
     }
 

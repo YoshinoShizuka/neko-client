@@ -42,8 +42,10 @@ public class WidgetListRecipe extends WidgetListBase<RecipePagePayload.Entry, Wi
 
     public WidgetListRecipe(int x, int y, int width, int height) {
         super(x, y, width, height, null);
-        // 一行 24：图标 16 + 标题行 + 原料行，上下留白
-        this.browserEntryHeight = 24;
+        // 一行 24：图标 16 + 标题行 + 原料行，上下留白。
+        // 🔴 行高只有一个来源：RecipeBrowseModel.ENTRY_HEIGHT —— 界面按它换算「可见几行」，
+        //    两边各写一个 24，改了一边就会出现「预取裕量算错」这种最难查的偏差。
+        this.browserEntryHeight = RecipeBrowseModel.ENTRY_HEIGHT;
         this.allowKeyboardNavigation = true;
 
         // 搜索框：与 WidgetListConfigOptions 完全同款的位置/尺寸算法
