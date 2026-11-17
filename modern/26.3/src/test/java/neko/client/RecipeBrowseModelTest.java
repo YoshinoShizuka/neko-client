@@ -249,19 +249,7 @@ class RecipeBrowseModelTest {
     class Hints {
 
         @Test
-        @DisplayName("E1 没开着仓库时必须说清「先开虚空仓库」，并给出可执行的三步")
-        void needContainerSaysWhatToOpen() {
-            List<String> lines = RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.NEED_CONTAINER);
-            String all = String.join("", lines);
-            assertAll(
-                    () -> assertFalse(lines.isEmpty(), "这一阶段不能没有话"),
-                    () -> assertTrue(all.contains("虚空仓库"), "必须点名要先开哪个界面：\n" + all),
-                    () -> assertTrue(all.contains("右键"), "必须给出可执行的动作，而不是「请检查设置」：\n" + all),
-                    () -> assertTrue(all.contains("服务端"), "必须解释这是服务端的要求，否则玩家会去重装客户端"));
-        }
-
-        @Test
-        @DisplayName("E2 服务端没回应时必须写明版本门槛 1.0.17 与两条规则")
+        @DisplayName("E1 服务端没回应时必须写明版本门槛 1.0.17 与两条规则，并给出下一步")
         void noReplySaysVersionAndRules() {
             List<String> lines = RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.NO_REPLY);
             String all = String.join("", lines);
@@ -271,6 +259,21 @@ class RecipeBrowseModelTest {
                     () -> assertTrue(all.contains("voidWarehouse") && all.contains("voidWarehouseCraft"),
                             "两条规则缺一不可，必须点名：\n" + all),
                     () -> assertTrue(all.contains("重试"), "要告诉玩家下一步能做什么：\n" + all));
+        }
+
+        @Test
+        @DisplayName("E2 任何提示语都不许再要求「先打开仓库界面」（服务端 1.0.17 已取消该要求）")
+        void noPhaseSendsPlayerToTheWarehouse() {
+            // 🔴 0.4.8 的自我设限就是从这里长出来的：客户端以为服务端只认开着的仓库界面，
+            // 于是「没开着容器 ⇒ 连 hello 都不发」。服务端早就不要求了，提示语也不许再这么写。
+            for (RecipeBrowseModel.Phase phase : RecipeBrowseModel.Phase.values()) {
+                for (String line : RecipeBrowseModel.hintLines(phase)) {
+                    assertAll(
+                            () -> assertFalse(line.contains("打开仓库"), phase + " 还在让玩家先去开仓库：" + line),
+                            () -> assertFalse(line.contains("开着仓库"), phase + " 还在把仓库界面当条件：" + line),
+                            () -> assertFalse(line.contains("虚空仓库界面"), phase + " 还在要求仓库界面：" + line));
+                }
+            }
         }
 
         @Test

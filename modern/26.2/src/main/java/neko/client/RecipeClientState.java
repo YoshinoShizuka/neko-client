@@ -86,13 +86,6 @@ public final class RecipeClientState {
     private static long lastHelloAt;
     /** 最近一次 hello 发出的时刻，用于 {@link #tickProbe} 判超时 */
     private static long helloSentAt;
-    /**
-     * 打开界面那一刻有没有开着容器界面（见 {@link #open(boolean)}）。
-     *
-     * <p>「重试」按钮要读它：没开着仓库时重试也不该发包，否则会把一句准确的
-     * 「先开仓库」换成一句误导的「服务端没回应」。</p>
-     */
-    private static boolean containerAtOpen;
     private static long lastQueryAt;
     /**
      * 最近一次 query 发出的时刻；{@code 0} = 没有待决的翻页请求。
@@ -169,28 +162,20 @@ public final class RecipeClientState {
     // ------------------------------------------------------------------ 请求侧
 
     /**
-     * 界面刚打开：先判「有没有开着容器界面」，再决定要不要真的问服务端。
+     * 界面刚打开：要一份索引（顺带探测对端支不支持）。
      *
-     * @param containerOpen 打开界面的那一刻，玩家是不是正开着某个容器界面
-     *                      （即 {@code containerMenu} 不是原版背包菜单）。
-     *                      🔴 必须由调用方在<b>换屏之前</b>取好再传进来 —— 本类不引任何
-     *                      Minecraft 类，这是它能被单测覆盖、也能五版本逐字节相同的前提。
+     * <p>🔴 <b>不做任何前置判断</b>。曾经在这里判过 {@code containerMenu}（「没开着仓库就别发」），
+     * 而服务端 1.0.17 起已经不要求开着仓库界面（{@code RecipeNetwork#dataOf} 只判规则与数据）——
+     * 那条判断只剩「把一个本来会成功的请求挡在客户端」这一个效果。要判的只有一处：发出去、等 2 秒。</p>
      */
-    public static void open(boolean containerOpen) {
+    public static void open() {
         status = "";
         GATE.clear();
         pendingQueryAt = 0L;
-        containerAtOpen = containerOpen;
-        if (phase == Phase.NO_REPLY || phase == Phase.NEED_CONTAINER) {
+        if (phase == Phase.NO_REPLY) {
             // 重开界面就是一次「再试一次」：别让玩家非得去找重试按钮
             phase = Phase.IDLE;
             lastHelloAt = 0L;
-        }
-        if (!containerOpen) {
-            // 发出去也只会被服务端静默丢掉（闸门第二道），与其看着转圈，不如当场把条件说清
-            phase = Phase.NEED_CONTAINER;
-            revision++;
-            return;
         }
         hello();
     }
@@ -217,10 +202,6 @@ public final class RecipeClientState {
 
     /** 要某一页（50ms 限流，页码就地夹取） */
     public static void requestPage(int target) {
-        if (phase == Phase.NEED_CONTAINER) {
-            // 上方说明已经写着要先开仓库，再发也只会被服务端丢掉
-            return;
-        }
         long now = System.currentTimeMillis();
         if (now - lastQueryAt < QUERY_INTERVAL_MS) {
             return;
@@ -307,15 +288,14 @@ public final class RecipeClientState {
     public static void tickProbe() {
         long now = System.currentTimeMillis();
         if (phase == Phase.PROBING && now - helloSentAt > REPLY_TIMEOUT_MS) {
-            // 超时该怎么说，取决于「打开时有没有开着仓库」：没开的话答案已经知道了
-            phase = containerAtOpen ? Phase.NO_REPLY : Phase.NEED_CONTAINER;
+            phase = Phase.NO_REPLY;
             revision++;
             return;
         }
         if (pendingQueryAt != 0L && now - pendingQueryAt > REPLY_TIMEOUT_MS) {
             // 翻页被静默丢掉：页码不会再动，得有人告诉玩家为什么
             pendingQueryAt = 0L;
-            status = "服务端没有回应（仓库界面还开着吗？）";
+            status = "服务端没有回应（点「重试」重问一次）";
             revision++;
         }
     }
@@ -323,20 +303,13 @@ public final class RecipeClientState {
     /**
      * 重试：把限流清零再来一次 hello。
      *
-     * <p>只在 {@link Phase#NO_REPLY} 时给按钮 —— {@link Phase#NEED_CONTAINER} 重试没有意义
-     * （玩家得先关掉界面去开仓库，点了也是同样的结果）。</p>
+     * <p>界面上的「重试」按钮就是它：规则刚打开、或服务端刚换成新版时，不用关界面重进。</p>
      */
     public static void retry() {
         phase = Phase.IDLE;
         lastHelloAt = 0L;
         pendingQueryAt = 0L;
         status = "";
-        if (!containerAtOpen) {
-            // 没开着仓库：重试一百次也是同一个结果，别把「先开仓库」的说法冲掉
-            phase = Phase.NEED_CONTAINER;
-            revision++;
-            return;
-        }
         hello();
         revision++;
     }
@@ -376,7 +349,6 @@ public final class RecipeClientState {
         lastQueryAt = 0L;
         pendingQueryAt = 0L;
         lastDeleteAt = 0L;
-        containerAtOpen = false;
         revision++;
     }
 

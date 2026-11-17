@@ -5,7 +5,6 @@ import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.render.GuiContext;
 import neko.voidwarehouse.recipe.RecipePagePayload;
 import neko.voidwarehouse.recipe.RecipeQueryPayload;
-import net.minecraft.world.inventory.InventoryMenu;
 
 import java.util.List;
 
@@ -35,13 +34,12 @@ import java.util.List;
  * {@code reCreateListWidget()} —— 这样既不关心回调在哪个线程，也不会在渲染途中被
  * 另一个线程改列表（那种崩溃的堆栈一眼看不出是模组的锅）。</p>
  *
- * <h2>🔴 这里为什么要判「有没有开着容器界面」</h2>
- * <p>服务端的闸门是「玩家正开着自己的仓库界面」（照抄 {@code search_*} 的既有边界）。
- * 玩家在野外按热键时，服务端会<b>静默丢包、一个回包都不发</b> —— 第一版就是这样永远
- * 停在「正在向服务端要配方本…」。所以打开界面时先在客户端判一次
- * {@code containerMenu}：没开着任何容器就<b>连 hello 都不发</b>，直接给出可执行的说明
- * （关掉这里 → 右键仓库 → 再按热键）。这一判据只取一次、就在换屏那一刻取，因为
- * 不同版本 {@code AbstractContainerScreen#removed} 的行为不一样，逐帧重判会误报。</p>
+ * <h2>🔴 不再判「有没有开着仓库界面」（0.4.9 更正）</h2>
+ * <p>第一版在这里判过 {@code containerMenu instanceof InventoryMenu}：不是容器界面就<b>连 hello 都不发</b>，
+ * 理由是「服务端只认开着的仓库界面」。那个前提在服务端 1.0.17 就取消了
+ * （{@code RecipeNetwork#dataOf} 只判规则与数据能不能取到），于是这条判断只剩一个效果：
+ * 玩家在世界上按热键时，把一个本来会成功的请求挡在客户端，界面永远空着。</p>
+ * <p>现在只做一件事：<b>发 hello，等 2 秒</b>。没回音才说话（{@link RecipeBrowseModel#hintLines}）。</p>
  *
  * <h2>这一版没有文本搜索</h2>
  * <p>服务端分页 ⇒ 客户端过滤只能筛当前页 8 条，搜「铁锭」而它在第 9 页时会被判「没有」。
@@ -77,23 +75,6 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         return current != null;
     }
 
-    /**
-     * 打开界面的这一刻，玩家是不是正开着某个容器界面。
-     *
-     * <p>原版背包菜单（{@code InventoryMenu}）是「什么都没开」的那一份 —— 服务端的
-     * {@code containerMenu instanceof VoidWarehouseMenu} 必然不成立。其余任何一种容器
-     * （仓库、箱子、熔炉…）都可能是仓库，只能靠 hello 的回应来判。</p>
-     *
-     * <p>🔴 这个判据之所以敢只取一次、且敢拿来「确定地」说「你先去开仓库」，
-     * 是因为换屏不会复位它：五份 {@code AbstractContainerScreen#removed()} 都只调
-     * {@code menu.removed(player)}（26.3 / 26.2 / 26.1.2 / 26.1.1 / 1.21.11 逐个 {@code javap}
-     * 核过），没有 {@code clientSideCloseContainer()}。哪天原版改成会复位，这里就要退化成
-     * 「照样发 hello、只把它当提示」。</p>
-     */
-    private boolean hasOpenContainer() {
-        return this.mc.player != null && !(this.mc.player.containerMenu instanceof InventoryMenu);
-    }
-
     @Override
     protected WidgetListRecipe createListWidget(int listX, int listY) {
         return new WidgetListRecipe(listX, listY, this.getBrowserWidth(), this.getBrowserHeight());
@@ -117,7 +98,7 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         // 只问一次：resize 也会走到这里，重复发 hello 没意义（服务端还有 100ms 限流）
         if (!this.requestedOnOpen) {
             this.requestedOnOpen = true;
-            RecipeClientState.open(this.hasOpenContainer());
+            RecipeClientState.open();
         }
 
         int y = this.getScreenHeight() - 26;
@@ -145,8 +126,8 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         x += 100;
 
         // 重试按钮恒在：按钮是在 initGui 里建的，而 NO_REPLY 要等 2 秒超时才会出现 ——
-        // 若按 phase 决定加不加，它永远来不及被建出来（第一版就是这么错过的）。
-        // 正常浏览时点它 = 重新要一次索引（刷新）；没开着仓库时点它不会乱发（见 retry()）。
+        // 若按 phase 决定加不加，它永远来不及被建出来（0.4.8 就是这么错过的）。
+        // 正常浏览时点它 = 重新要一次索引（刷新）。
         this.addButton(new ButtonGeneric(x, y, 48, btnHeight, "重试",
                 "重新问一次服务端：规则刚打开、或刚重开过仓库界面时用"),
                 (base, mouseButton) -> RecipeClientState.retry());
@@ -187,7 +168,7 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
             this.drawString(ctx, status, 12, 25, 0xFFFFD060);
         }
 
-        // 提示行：PROBING / NEED_CONTAINER / NO_REPLY 各自的说法，正常浏览时为空
+        // 提示行：PROBING / NO_REPLY 各自的说法，正常浏览时为空
         int y = LIST_Y;
         int color = hintColor();
         for (String line : this.hints) {
@@ -241,7 +222,7 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
     private int hintColor() {
         return switch (RecipeClientState.phase()) {
             case PROBING -> 0xFFAAAAAA;
-            case NEED_CONTAINER, NO_REPLY -> 0xFFFFC860;
+            case NO_REPLY -> 0xFFFFC860;
             default -> 0xFFAAAAAA;
         };
     }
