@@ -48,8 +48,8 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.8.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.4.8.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.9.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.4.9.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -78,7 +78,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | 取满手势 / `fillGesture` | **未绑定** | 切取满手势；立刻生效 |
 | 取满组合键 / `fillCombo` | `LEFT_CONTROL,LEFT_ALT,BUTTON_2` | **不是开关，是手势本身**：按住它再点格子。只认绑定的那个鼠标键，未绑定的键一律不触发 |
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面 |
-| 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增） |
+| 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增；**要先把虚空仓库界面开着**） |
 
 三条开关热键默认留空，是因为 `H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车。`fillCombo` 是唯一给默认值的例外 —— 它是**手势本身**，留空等于把「可配置化」做成功能删除。
 
@@ -88,7 +88,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 - **生效时机**：界面里改 / 按热键 → 立刻 + 当场写回；手改 json → **退出重进一次世界**。
 - ⚠️ 两个开关**都关**时打开界面，界面里不会创建搜索框；此时用热键打开搜索框，需要关掉界面再开一次（框是在界面初始化时建的）。
 
-### 配方本（0.4.8 起）
+### 配方本（0.4.8 起，0.4.9 修入口）
 
 按「打开配方本」热键（默认未绑定，在配置界面「快捷键」页设）打开：
 
@@ -104,14 +104,18 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 - **排序**：「按名字」= 产物 id 字典序（稳定，翻页不会重复/漏条）；「最近学习」= 刚学会的在最前。
 - **删完立刻不可合成**：服务端同一 tick 内就当它不存在（`virtualEntrySignature` 里含 `recipeGeneration`），不用等界面刷新。
 - ⚠️ 这一版**没有文本搜索**：服务端是分页的，客户端过滤只能筛当前页 8 条，搜「铁锭」而它在第 9 页时会被误判成「没有这条」。按名字排序 + 翻页在实测存档（十几条到一两百条）够用；真搜索要把匹配出的产物 id 白名单发给服务端重取，留到下一版。
-- 服务端需要 `carpet-Neko-Addition` **1.0.17+**；没有这条通道时热键只闪一句提示，不会开一个空界面。
+- 🔴 **必须先打开虚空仓库界面**，再按「打开配方本」。服务端只认「正开着的仓库界面」（照抄搜索通道的既有边界），
+  这是它的权限判断，客户端绕不过去。没开着的时候界面不会干等，会直接写「关掉这里 → 右键打开仓库 → 再按热键」。
+- **三种「打不开」各有各的说法**（0.4.9）：没开仓库 = 上面那句话；开了但服务端不回 = 提示需要 `1.0.17+` 且两条规则都开着 + 给「重试」按钮；
+  对端连通道都没有 = 热键只闪一句动作栏提示，不开空界面。翻页也带 2 秒超时，不会再出现「页码不动也没人说话」。
+- 服务端需要 `carpet-Neko-Addition` **1.0.17+**。
 
 ## 构建
 
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 配置 20 + 组合键 18 + 配方本分页/确认 19 = 57 条
+.\gradlew.bat :modern:26.3:test        REM 配置 20 + 组合键 18 + 配方本分页/确认 19 + 阶段提示 4 = 61 条
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -120,7 +124,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **973 条** jar 级字节码断言 + 8 个变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **1057 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
