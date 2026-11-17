@@ -68,6 +68,13 @@ public final class RecipeClientState {
      */
     private static final long REPLY_TIMEOUT_MS = 2000L;
 
+    /**
+     * 「索引说有条目、可一页明细迟迟没到」时，最多自动补要几次。
+     *
+     * <p>2 次够覆盖一次丢包；再多就成了每 2 秒一包地刷服务端。</p>
+     */
+    private static final int MAX_PAGE_RETRIES = 2;
+
     private static int generation = -1;
     private static int total;
     private static int used;
@@ -94,6 +101,8 @@ public final class RecipeClientState {
      * 没有这个字段，玩家点「下一页」只会看到页码不动、列表不换 —— 又是一种「没反应」。</p>
      */
     private static long pendingQueryAt;
+    /** 本次索引之后已经自动补要过几次第一页（见 {@link #ensurePageLoaded()}） */
+    private static int pageRetries;
     private static long lastDeleteAt;
 
     private RecipeClientState() {
@@ -298,6 +307,32 @@ public final class RecipeClientState {
             status = "服务端没有回应（点「重试」重问一次）";
             revision++;
         }
+        ensurePageLoaded();
+    }
+
+    /**
+     * 兜底：索引说有内容、可第一页一行都没有 ⇒ 自动再要一次（最多 {@link #MAX_PAGE_RETRIES} 次）。
+     *
+     * <p>🔴 这是给「接漏了线」这种故障兜底的：真机 0.4.9 就出现过标题写着「共 15 条·第 1 / 2 页」、
+     * 底下一行都没有 —— 因为 {@link #onIndex} 收完索引没去要明细。补上之后仍然留着这一手：
+     * 丢包、竞态、将来谁又改漏了，玩家看到的是「自己好了」，而不是一个空列表。</p>
+     *
+     * <p>只补第一页（{@code page == 0}）：翻页翻空有可能是真的没内容，那一补就会打转。</p>
+     */
+    public static void ensurePageLoaded() {
+        if (phase != Phase.READY || total <= 0 || page != 0
+                || !entries.isEmpty() || pendingQueryAt != 0L) {
+            return;
+        }
+        if (pageRetries >= MAX_PAGE_RETRIES) {
+            if (status.isEmpty()) {
+                status = "没能取到这一页（点「重试」再问一次）";
+                revision++;
+            }
+            return;
+        }
+        pageRetries++;
+        requestPage(page);
     }
 
     /**
@@ -348,6 +383,7 @@ public final class RecipeClientState {
         lastHelloAt = 0L;
         lastQueryAt = 0L;
         pendingQueryAt = 0L;
+        pageRetries = 0;
         lastDeleteAt = 0L;
         revision++;
     }
@@ -362,7 +398,11 @@ public final class RecipeClientState {
         used = payload.used();
         canDelete = payload.canDelete();
         outputs = payload.outputs() == null ? List.of() : List.copyOf(payload.outputs());
+        pageRetries = 0;
         revision++;
+        // 🔴 索引只管「有多少条、叫什么」，一页明细要单独要。这里不接一拳，界面就是空列表 ——
+        // 真机 0.4.9 的表现：标题写着「共 15 条 / 第 1 / 2 页」，底下一行都没有。
+        requestPage(page);
     }
 
     /**
@@ -382,6 +422,10 @@ public final class RecipeClientState {
         page = payload.page();
         total = payload.total();
         entries = payload.entries() == null ? List.of() : List.copyOf(payload.entries());
+        if (!entries.isEmpty()) {
+            // 真的拿到内容了才算「这一页通了」；空页不清零，否则坏服务端能让补要逻辑转成死循环
+            pageRetries = 0;
+        }
         revision++;
     }
 

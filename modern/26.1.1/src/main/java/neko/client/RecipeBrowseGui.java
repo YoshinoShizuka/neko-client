@@ -51,8 +51,19 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
 
     private static final int LIST_X = 10;
     /** 列表默认顶边；有提示行时整体下移（见 {@link #hintSpace()}） */
-    private static final int LIST_Y = 36;
+    private static final int LIST_Y = 44;
     private static final int HINT_LINE_HEIGHT = 11;
+    /**
+     * 文本列与三行文本的纵坐标。
+     *
+     * <p>🔴 标题是 malilib 自己画的，位置写死在 <b>(20, 10)</b>（{@code GuiBase#drawTitle}，
+     * 常量 {@code LEFT=20 / TOP=10}）。第一版把状态行放在 y=14 —— 和标题只差 4 像素，
+     * 真机上「配方本」和「已用 15 / 2048」直接叠成一团。所以：标题占 10~19，状态行从 22 起。</p>
+     */
+    private static final int TEXT_X = 20;
+    private static final int INFO_Y = 22;
+    private static final int STATUS_Y = 33;
+    private static final int HINT_Y = 44;
 
     private static RecipeBrowseGui current;
 
@@ -160,20 +171,20 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
                 RecipeBrowseModel.usageLine(RecipeClientState.used(), RecipeClientState.MAX_RECIPES,
                         RecipeClientState.page(), RecipeClientState.total(),
                         RecipeClientState.pageSize()),
-                12, 14, 0xFFFFFFFF);
+                TEXT_X, INFO_Y, 0xFFFFFFFF);
 
         // 第二行：删除回执 / 翻页超时提示（没有内容时不画，避免一条空行）
         String status = RecipeClientState.status();
         if (!status.isEmpty()) {
-            this.drawString(ctx, status, 12, 25, 0xFFFFD060);
+            this.drawString(ctx, status, TEXT_X, STATUS_Y, 0xFFFFD060);
         }
 
         // 提示行：PROBING / NO_REPLY 各自的说法，正常浏览时为空
-        int y = LIST_Y;
+        int y = HINT_Y;
         int color = hintColor();
         for (String line : this.hints) {
             if (line != null && !line.isEmpty()) {
-                this.drawString(ctx, line, 12, y, color);
+                this.drawString(ctx, line, TEXT_X, y, color);
             }
             y += HINT_LINE_HEIGHT;
         }
@@ -181,7 +192,7 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         // 空本提示只在「真拿到了索引且一条都没有」时画 —— 探测阶段画这句是撒谎
         if (this.hints.isEmpty() && RecipeClientState.phase() == RecipeBrowseModel.Phase.READY
                 && RecipeClientState.entries().isEmpty() && RecipeClientState.total() == 0) {
-            this.drawString(ctx, "配方本是空的（合成成功一次就会记进来）", 12, LIST_Y, 0xFFAAAAAA);
+            this.drawString(ctx, "配方本是空的（合成成功一次就会记进来）", TEXT_X, LIST_Y, 0xFFAAAAAA);
         }
 
         super.drawContents(ctx, mouseX, mouseY, partialTicks);
