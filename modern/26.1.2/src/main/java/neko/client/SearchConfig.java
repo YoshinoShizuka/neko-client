@@ -109,6 +109,16 @@ public final class SearchConfig implements IConfigHandler {
             "openGui", SearchConfigJson.DEFAULT_KEY_OPEN_GUI, HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
+     * 打开「配方本」界面的热键（默认未绑定）。
+     *
+     * <p>为什么不塞个常驻按钮进仓库界面：那面框只有 176 宽，搜索框已经占掉 140，
+     * 再挤一个按钮就要改所有玩家的习惯布局。热键是 malilib 的原生能力，
+     * 而且和「打开配置界面」放在同一页里，玩家找得到。</p>
+     */
+    public static final ConfigHotkey OPEN_RECIPES = new ConfigHotkey(
+            "openRecipes", SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES, HOTKEY_SETTINGS).apply(PREFIX);
+
+    /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
@@ -116,7 +126,8 @@ public final class SearchConfig implements IConfigHandler {
      * {@code IHotkey} → {@code IConfigValue} → {@code IConfigBase} 是子接口）与
      * malilib 的热键表（{@code addHotkeysForCategory} 要 {@code IHotkey}）。</p>
      */
-    public static final List<IHotkey> OPTIONS = List.of(SEARCH_BOX, FILL_GESTURE, FILL_COMBO, OPEN_GUI);
+    public static final List<IHotkey> OPTIONS =
+            List.of(SEARCH_BOX, FILL_GESTURE, FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
 
     /**
      * 配置界面「通用」页：两个功能开关。
@@ -132,7 +143,7 @@ public final class SearchConfig implements IConfigHandler {
      * <p>{@code FILL_COMBO} 排在最前面：它才是玩家最常改的那一条 —— 通用页的
      * 「取满」开关只回答开不开，<b>按哪个键</b>在这一页。</p>
      */
-    public static final List<IHotkey> GUI_HOTKEYS = List.of(FILL_COMBO, OPEN_GUI);
+    public static final List<IHotkey> GUI_HOTKEYS = List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
 
     /** 给 malilib 的 {@code ConfigManager} 用（它会自己 new 一个；本类只有静态状态） */
     public SearchConfig() {
@@ -170,6 +181,7 @@ public final class SearchConfig implements IConfigHandler {
             FILL_GESTURE.setBooleanHotkeyValue(Pair.of(values.fillGesture(), values.keyFillGesture()));
             FILL_COMBO.setHotkeyStringValue(values.keyFillCombo());
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
+            OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -185,7 +197,8 @@ public final class SearchConfig implements IConfigHandler {
                 box.getLeft(), fill.getLeft(),
                 box.getRight(), fill.getRight(),
                 FILL_COMBO.getHotkeyStringValue(),
-                OPEN_GUI.getHotkeyStringValue()));
+                OPEN_GUI.getHotkeyStringValue(),
+                OPEN_RECIPES.getHotkeyStringValue()));
 
         Path path = file();
         try {

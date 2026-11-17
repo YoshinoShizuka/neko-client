@@ -15,4 +15,6 @@
   "message.neko_client.search_off": "Void Warehouse · search box: OFF",
   "message.neko_client.fill_on": "Void Warehouse · fill gesture: ON",
   "message.neko_client.fill_off": "Void Warehouse · fill gesture: OFF"
+,
+  "message.neko_client.recipes_unsupported": "This server has no recipe-book channel (needs carpet-Neko-Addition 1.0.17+)"
 }

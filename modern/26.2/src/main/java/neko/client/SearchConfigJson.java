@@ -41,6 +41,9 @@ final class SearchConfigJson {
     static final String DEFAULT_KEY_FILL_GESTURE = "";
     static final String DEFAULT_KEY_OPEN_GUI = "";
 
+    /** 打开「配方本」界面的热键（默认未绑定，与其它开关热键同一条理由：别抢字母键） */
+    static final String DEFAULT_KEY_OPEN_RECIPES = "";
+
     /**
      * 🔴 取满组合键<b>刻意给了默认值</b>（与上面三条相反，这是唯一例外）。
      *
@@ -82,12 +85,13 @@ final class SearchConfigJson {
                   String keySearchBox,
                   String keyFillGesture,
                   String keyFillCombo,
-                  String keyOpenGui) {
+                  String keyOpenGui,
+                  String keyOpenRecipes) {
 
         static Values defaults() {
             return new Values(DEFAULT_SEARCH_BOX, DEFAULT_FILL_GESTURE,
                     DEFAULT_KEY_SEARCH_BOX, DEFAULT_KEY_FILL_GESTURE,
-                    DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI);
+                    DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES);
         }
 
         /**
@@ -119,7 +123,8 @@ final class SearchConfigJson {
                 readKey(json, "keySearchBox", DEFAULT_KEY_SEARCH_BOX),
                 readKey(json, "keyFillGesture", DEFAULT_KEY_FILL_GESTURE),
                 readKeyKeepingEmpty(json, "keyFillCombo", DEFAULT_KEY_FILL_COMBO),
-                readKey(json, "keyOpenGui", DEFAULT_KEY_OPEN_GUI));
+                readKey(json, "keyOpenGui", DEFAULT_KEY_OPEN_GUI),
+                readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES));
     }
 
     /**
@@ -130,7 +135,7 @@ final class SearchConfigJson {
     static String render(Values values) {
         return """
                 {
-                  "_readme": "两个功能的开关 + 四个热键。改完保存后重进一次世界即生效（游戏内按热键切换是立刻生效的）。",
+                  "_readme": "两个功能的开关 + 五个热键（多出来的那个是打开配方本）。改完保存后重进一次世界即生效（游戏内按热键切换是立刻生效的）。",
                   "_readme_keys": "开关热键默认全部留空（未绑定），需要自己绑一个：进游戏后按配置界面的热键，或在任意 malilib 模组的配置界面右上角下拉框里选本模组。写法是 malilib 的键名：单个键写 H，组合键写 LEFT_CONTROL,LEFT_ALT，鼠标键写 BUTTON_1。",
                   "_readme_fillCombo": "keyFillCombo 是「取满手势」的组合键，必须恰好包含一个鼠标键：BUTTON_1 = 左键、BUTTON_2 = 右键、BUTTON_3 = 中键（26.3 也可写 MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE）。0.4.7 起默认 LEFT_CONTROL,LEFT_ALT,BUTTON_2 = Ctrl+Alt+右键；想用左键就把它改成 BUTTON_1。判据严格匹配：绑右键时左键不会触发，反之亦然。只对前 5 行内容格生效（第 6 行是导航行，玩家背包/快捷栏不算）。写成空字符串 = 清空 = 关掉这个手势（开关开着也不响应）。",
                   "searchBox": %s,
@@ -138,11 +143,12 @@ final class SearchConfigJson {
                   "keySearchBox": "%s",
                   "keyFillGesture": "%s",
                   "keyFillCombo": "%s",
-                  "keyOpenGui": "%s"
+                  "keyOpenGui": "%s",
+                  "keyOpenRecipes": "%s"
                 }
                 """.formatted(values.searchBox(), values.fillGesture(),
                 values.keySearchBox(), values.keyFillGesture(), values.keyFillCombo(),
-                values.keyOpenGui());
+                values.keyOpenGui(), values.keyOpenRecipes());
     }
 
     /** 缺字段、类型不对（例如手改成字符串 {@code "false"}）一律回落到默认值 */

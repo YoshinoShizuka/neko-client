@@ -15,4 +15,6 @@
   "message.neko_client.search_off": "虚空仓库 · 搜索框：已关闭",
   "message.neko_client.fill_on": "虚空仓库 · 取满手势：已开启",
   "message.neko_client.fill_off": "虚空仓库 · 取满手势：已关闭"
+,
+  "message.neko_client.recipes_unsupported": "服务端没有配方本通道（需要 carpet-Neko-Addition 1.0.17+）"
 }

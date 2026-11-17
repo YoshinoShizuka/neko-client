@@ -51,6 +51,7 @@ public final class SearchKeybinds {
                 "message.neko_client.fill_on",
                 "message.neko_client.fill_off"));
         SearchConfig.OPEN_GUI.getKeybind().setCallback(new OpenGuiCallback());
+        SearchConfig.OPEN_RECIPES.getKeybind().setCallback(new OpenRecipesCallback());
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -95,6 +96,31 @@ public final class SearchKeybinds {
             // 当前正开着容器界面就地刷新：关搜索框=藏框并撤掉服务端过滤，打开=立刻可见
             SearchClientState.applyFeatureStateToCurrentScreen();
             InfoUtils.printActionbarMessage(on ? this.onKey : this.offKey);
+            return true;
+        }
+    }
+
+    /**
+     * 打开配方本界面。
+     *
+     * <p>对端不支持时（{@code phase == UNSUPPORTED}）只闪一句动作栏提示，不开空界面 ——
+     * 一个永远空着的列表比「没有这个功能」更让人困惑。</p>
+     */
+    private static final class OpenRecipesCallback implements IHotkeyCallback {
+
+        @Override
+        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
+            if (action != KeyAction.PRESS) {
+                return false;
+            }
+            if (SearchClientState.isSearchFocused()) {
+                return false;
+            }
+            if (RecipeClientState.phase() == RecipeClientState.Phase.UNSUPPORTED) {
+                InfoUtils.printActionbarMessage("message.neko_client.recipes_unsupported");
+                return true;
+            }
+            GuiBase.openGui(new RecipeBrowseGui());
             return true;
         }
     }

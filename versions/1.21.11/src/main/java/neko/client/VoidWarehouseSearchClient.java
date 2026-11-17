@@ -8,6 +8,13 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import neko.voidwarehouse.fill.FillRequestPayload;
+import neko.voidwarehouse.recipe.RecipeChangedPayload;
+import neko.voidwarehouse.recipe.RecipeDeletePayload;
+import neko.voidwarehouse.recipe.RecipeDeleteResultPayload;
+import neko.voidwarehouse.recipe.RecipeHelloPayload;
+import neko.voidwarehouse.recipe.RecipeIndexPayload;
+import neko.voidwarehouse.recipe.RecipePagePayload;
+import neko.voidwarehouse.recipe.RecipeQueryPayload;
 import neko.voidwarehouse.search.SearchApplyPayload;
 import neko.voidwarehouse.search.SearchCatalogPayload;
 import neko.voidwarehouse.search.SearchHelloPayload;
@@ -75,6 +82,18 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         PayloadChannels.register(c2s, "fill_request", FillRequestPayload.TYPE, FillRequestPayload.CODEC);
         PayloadChannels.register(s2c, "search_catalog", SearchCatalogPayload.TYPE, SearchCatalogPayload.CODEC);
 
+        // 配方本浏览 / 删除（1.0.17 服务端新增，客户端 0.4.8 起有入口）。
+        // 七个 payload 与服务端 neko.voidwarehouse.recipe.* 逐字节同构 —— 同 FQCN 是硬要求，
+        // 理由与上面四条完全一样（不同包同名 ⇒ 编码 cast 失败 ⇒ 一开界面就断线）。
+        PayloadChannels.register(c2s, "recipe_hello", RecipeHelloPayload.TYPE, RecipeHelloPayload.CODEC);
+        PayloadChannels.register(c2s, "recipe_query", RecipeQueryPayload.TYPE, RecipeQueryPayload.CODEC);
+        PayloadChannels.register(c2s, "recipe_delete", RecipeDeletePayload.TYPE, RecipeDeletePayload.CODEC);
+        PayloadChannels.register(s2c, "recipe_index", RecipeIndexPayload.TYPE, RecipeIndexPayload.CODEC);
+        PayloadChannels.register(s2c, "recipe_page", RecipePagePayload.TYPE, RecipePagePayload.CODEC);
+        PayloadChannels.register(s2c, "recipe_delete_result",
+                RecipeDeleteResultPayload.TYPE, RecipeDeleteResultPayload.CODEC);
+        PayloadChannels.register(s2c, "recipe_changed", RecipeChangedPayload.TYPE, RecipeChangedPayload.CODEC);
+
         // 接收端：同一个 id 已被别人注册过时返回 false（后注册者覆盖前者）。
         // 拿不到 catalog 就等于搜索框永远不亮 —— 这里必须说明白，别让人以为是「功能没做」。
         if (!ClientPlayNetworking.registerGlobalReceiver(SearchCatalogPayload.TYPE,
@@ -83,8 +102,22 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
                     + "这不影响连接，也不影响取满手势（它只认 canSend）。");
         }
 
+        // 配方本的四条 S2C：回调只改字段（见 RecipeClientState 的类注释），不碰控件。
+        // 注册失败不致命 —— 大不了配方本界面一直停在「要不到数据」，不会影响连接。
+        ClientPlayNetworking.registerGlobalReceiver(RecipeIndexPayload.TYPE,
+                (payload, context) -> RecipeClientState.onIndex(payload));
+        ClientPlayNetworking.registerGlobalReceiver(RecipePagePayload.TYPE,
+                (payload, context) -> RecipeClientState.onPage(payload));
+        ClientPlayNetworking.registerGlobalReceiver(RecipeDeleteResultPayload.TYPE,
+                (payload, context) -> RecipeClientState.onDeleteResult(payload));
+        ClientPlayNetworking.registerGlobalReceiver(RecipeChangedPayload.TYPE,
+                (payload, context) -> RecipeClientState.onChanged(payload));
+
         // 断线就清状态（服务端的过滤跟着菜单消失，这里只是别留着旧引用）
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> SearchClientState.clear());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            SearchClientState.clear();
+            RecipeClientState.clear();
+        });
 
         // 每次进世界重读一次配置：手改过 json 的玩家不用重启游戏，进出一次世界即可生效
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {

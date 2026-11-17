@@ -129,7 +129,8 @@ class SearchConfigJsonTest {
                         SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                         SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                         SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
-                        SearchConfigJson.DEFAULT_KEY_OPEN_GUI);
+                        SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
+                        SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES);
                 String text = SearchConfigJson.render(written);
                 SearchConfigJson.Values values = SearchConfigJson.parse(text);
                 assertEquals(written, values, "整份配置往返失真: " + text);
@@ -228,7 +229,8 @@ class SearchConfigJsonTest {
     @DisplayName("F3 组合键串往返不失真（malilib 的逗号分隔写法）")
     void comboHotkeyRoundTrips() {
         SearchConfigJson.Values written = new SearchConfigJson.Values(
-                true, false, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V");
+                true, false, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V",
+                "LEFT_ALT,G");
         assertEquals(written, SearchConfigJson.parse(SearchConfigJson.render(written)));
     }
 
@@ -270,7 +272,8 @@ class SearchConfigJsonTest {
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                 "",   // ← 玩家在配置界面里把组合键清掉了
-                SearchConfigJson.DEFAULT_KEY_OPEN_GUI);
+                SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
+                SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES);
         SearchConfigJson.Values readBack = SearchConfigJson.parse(SearchConfigJson.render(cleared));
         assertEquals("", readBack.keyFillCombo(),
                 "清空后重进世界组合键又回来了 —— 表现为「关不掉这个手势」");
@@ -300,13 +303,15 @@ class SearchConfigJsonTest {
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                 SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
-                SearchConfigJson.DEFAULT_KEY_OPEN_GUI);
+                SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
+                SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES);
     }
 
     private static String renderWith(boolean searchBox, boolean fillGesture,
                                      String keySearchBox, String keyFillGesture,
                                      String keyOpenGui, String keyFillCombo) {
         return SearchConfigJson.render(new SearchConfigJson.Values(
-                searchBox, fillGesture, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui));
+                searchBox, fillGesture, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui,
+                SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES));
     }
 }
