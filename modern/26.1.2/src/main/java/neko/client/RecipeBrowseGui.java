@@ -147,12 +147,16 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         // 排序切换：服务端两种稳定序，客户端只报一个枚举。
         // 🔴 按钮文字必须点击时更新：initGui 里算的那份是死的，点了不更新 = 「看起来没反应」
         //    的第一嫌疑（列表顺序其实变了，但按钮还写着旧字样）。
+        // 🔴🔴 目标值必须在点击那一刻从当前状态现算，绝不能把 initGui 算好的 byName 捕获进
+        //    lambda：那是定值，第一次点击翻转成功后，之后的每次点击发的都是同一个值 ——
+        //    setSort 一看「请求值 == 当前值」就早退，表现正是「点一次有反应，再点就没反应」
+        //    （0.5.1 真机日志实锤：一次会话内第 1 次有 page 0，之后全是空转）。
         boolean byName = RecipeClientState.sort() == RecipeQueryPayload.SORT_OUTPUT;
         ButtonGeneric sortButton = new ButtonGeneric(x, y, 96, btnHeight,
                         "排序：" + (byName ? "按名字" : "最近学习"),
                         "按名字 = 产物 id 字典序（稳定）；最近学习 = 刚学会的在最前");
         this.addButton(sortButton, (base, mouseButton) -> {
-            RecipeClientState.setSort(byName
+            RecipeClientState.setSort(RecipeClientState.sort() == RecipeQueryPayload.SORT_OUTPUT
                     ? RecipeQueryPayload.SORT_RECENT
                     : RecipeQueryPayload.SORT_OUTPUT);
             sortButton.setDisplayString("排序：" + (RecipeClientState.sort()
