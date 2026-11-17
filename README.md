@@ -1,10 +1,12 @@
 # Neko Client（虚空仓库客户端增强）
 
-纯客户端 Fabric mod，给「虚空仓库」的界面（一个 6 行原版大箱子）加三件事：
+纯客户端 Fabric mod，给「虚空仓库」的界面（一个 6 行原版大箱子）加四件事：
 
 1. **搜索框** —— 支持**中文 / 拼音全拼 / 拼音首字母 / 注册名**筛选物品。服务端 GUI 一个字节不变，纯原版玩家零感知。
 2. **取满手势** —— 按住组合键 + 点一格，取出到背包放不下为止。常规模式给**纯散货**，潜影盒模式给**满盒**；装多少由服务端按你的真实背包现算。
-3. **独立开关 + 可自定义热键** —— 两个功能各一套，由 **malilib**（MiniHUD / Litematica 那套）管，设置落 `config/neko-client.json`。
+3. **配方本浏览与删除**（0.4.8 新增）—— 按热键打开，看得到本子里每一条「产物 × 产出数 ← 原料 ×数量」，
+   逐条删除（点两次确认）。一份本子全服共用，删一条对所有人生效。
+4. **独立开关 + 可自定义热键** —— 两个功能各一套，由 **malilib**（MiniHUD / Litematica 那套）管，设置落 `config/neko-client.json`。
 
 ![Side](https://img.shields.io/badge/side-%E7%BA%AF%E5%AE%A2%E6%88%B7%E7%AB%AF-informational) ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.x-2ea043)
 
@@ -46,8 +48,8 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.7.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.4.7.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.4.8.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.4.8.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -76,6 +78,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | 取满手势 / `fillGesture` | **未绑定** | 切取满手势；立刻生效 |
 | 取满组合键 / `fillCombo` | `LEFT_CONTROL,LEFT_ALT,BUTTON_2` | **不是开关，是手势本身**：按住它再点格子。只认绑定的那个鼠标键，未绑定的键一律不触发 |
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面 |
+| 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增） |
 
 三条开关热键默认留空，是因为 `H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车。`fillCombo` 是唯一给默认值的例外 —— 它是**手势本身**，留空等于把「可配置化」做成功能删除。
 
@@ -85,12 +88,30 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 - **生效时机**：界面里改 / 按热键 → 立刻 + 当场写回；手改 json → **退出重进一次世界**。
 - ⚠️ 两个开关**都关**时打开界面，界面里不会创建搜索框；此时用热键打开搜索框，需要关掉界面再开一次（框是在界面初始化时建的）。
 
+### 配方本（0.4.8 起）
+
+按「打开配方本」热键（默认未绑定，在配置界面「快捷键」页设）打开：
+
+```
+已用 137 / 2048 · 第 1 / 18 页 · 共 137 条
+铁剑 ×1                     原料：铁锭 ×2、木棍 ×1     [删除]
+铁镐 ×1                     原料：铁锭 ×3、木棍 ×2     [删除]
+[上一页] [下一页] [排序：按名字]                        [关闭]
+```
+
+- **删除要点两次**：第一次按钮变成「确认删除？」，3 秒内再点才真发。一份本子全服共用、**没有撤销**，所以确认这一步必须留着。
+- **只认已经记进来的配方**：合成成功一次才会往里加；删掉之后再成功合成一次会重新记上（`recipeId` 由内容算出，同一条配方永远是同一个 id）。
+- **排序**：「按名字」= 产物 id 字典序（稳定，翻页不会重复/漏条）；「最近学习」= 刚学会的在最前。
+- **删完立刻不可合成**：服务端同一 tick 内就当它不存在（`virtualEntrySignature` 里含 `recipeGeneration`），不用等界面刷新。
+- ⚠️ 这一版**没有文本搜索**：服务端是分页的，客户端过滤只能筛当前页 8 条，搜「铁锭」而它在第 9 页时会被误判成「没有这条」。按名字排序 + 翻页在实测存档（十几条到一两百条）够用；真搜索要把匹配出的产物 id 白名单发给服务端重取，留到下一版。
+- 服务端需要 `carpet-Neko-Addition` **1.0.17+**；没有这条通道时热键只闪一句提示，不会开一个空界面。
+
 ## 构建
 
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 配置 JSON 20 条 + 组合键判据 18 条 = 38 条
+.\gradlew.bat :modern:26.3:test        REM 配置 20 + 组合键 18 + 配方本分页/确认 19 = 57 条
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -99,7 +120,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 643 条 jar 级字节码断言 + 8 个变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **973 条** jar 级字节码断言 + 8 个变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
