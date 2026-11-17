@@ -1,19 +1,32 @@
 package neko.client;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
- * 配方本浏览的<b>纯逻辑</b>：分页夹取、行文本、删除二次确认状态机。
+ * 配方本浏览的<b>纯逻辑</b>：搜索匹配与排序、滚动预取判据、行文本、删除二次确认状态机。
  *
  * <p>刻意不 import 任何 MC / malilib 类型（连 payload 的 {@code Entry} 也不碰）——
  * 这样它能直接跑 JUnit，而不需要启动游戏。跨版本容易出错的从来不是「发什么包」，
- * 而是「页码越界怎么夹」「删一条要点几次」「同一条的确认窗口算不算过期」这些
+ * 而是「搜索该把哪条排在最前」「滚到第几行该去要下一页」「删一条要点几次」这些
  * 与图形库无关的判断，把它们钉在这里最划算。</p>
  *
- * <h2>为什么页大小是 8</h2>
- * <p>界面高 240：标题 20 + 状态行 12 + 8 行 × 22 + 底部按钮 24 ≈ 232。
- * 服务端允许到 32，但一屏放不下 32 行，多要的条目只会被丢掉 —— 8 行是「一屏能看清」
- * 与「少翻页」的折中。{@link #SERVER_MAX_PAGE_SIZE} 只是提醒别把 pageSize 报超。</p>
+ * <h2>0.5.0：为什么从「翻页」改成「滚到底自动续」</h2>
+ * <p>服务端是分页的（一页最多 32 条），但玩家要看的是<b>一整本</b>：
+ * 0.4.x 那两个「上一页 / 下一页」按钮让「找一条配方」变成「逐个猜页码」，
+ * 而且一页只有 8 条时，137 条的本子要按 18 次。现在的做法是：</p>
+ * <ol>
+ *   <li>{@link #PAGE_SIZE} 一次要满 32 条（服务端上限），列表连续滚动；</li>
+ *   <li>滚到<b>还剩 {@link #PREFETCH_ROWS} 行</b>时就悄悄要下一页，用户看到的是「越滚越多」；</li>
+ *   <li>页码完全不进界面 —— 玩家不需要知道它存在（{@link #statusLine} 只报「已显示 X / Y 条」）。</li>
+ * </ol>
+ *
+ * <h2>0.5.0：搜索为什么必须是「匹配度排序」</h2>
+ * <p>服务端只认<b>产物 id 白名单</b>（它没有中文语言表，见 {@code RecipeQueryPayload} 头注释），
+ * 所以匹配一定发生在客户端。但「匹配上了」不等于「玩家想要的那条」：
+ * 搜「铁」时，{@code 铁剑} 和其它 40 个带铁的产物都会进白名单，而服务端只按 id 字典序返回 ——
+ * 玩家第一屏看到的可能是「铁块」。{@link #matchRank} 给出的分数就是<b>置顶依据</b>：
+ * 名字完全相等 &gt; 名字前缀 &gt; 名字包含 &gt; id 包含，同分再按名字和 recipeId 排。</p>
  *
  * <h2>为什么需要「点两次才删」</h2>
  * <p>服务端把删除做成<b>全局真删</b>（一份本子全服共用），点错一次的代价是所有人少一条配方，
@@ -22,24 +35,186 @@ import java.util.List;
  */
 public final class RecipeBrowseModel {
 
-    /** 一屏放得下的行数（界面几何决定，见类注释） */
-    public static final int PAGE_SIZE = 8;
+    /**
+     * 一次向服务端要多少条。
+     *
+     * <p>0.4.x 这里是 8（一屏放得下），现在列表是连续滚动的，一次多要几条能少跑好几个来回。
+     * 值等于服务端 {@code RecipeQueryPayload.MAX_PAGE_SIZE} —— 报超了会被服务端夹，
+     * 而 {@code recipe_page} 的解码上限也是同一个数，两边必须一致。</p>
+     */
+    public static final int PAGE_SIZE = 32;
 
     /** 服务端 {@code RecipeQueryPayload.MAX_PAGE_SIZE} 的同值副本：报超了会被夹，别指望它 */
     public static final int SERVER_MAX_PAGE_SIZE = 32;
 
+    /**
+     * 还剩多少行没显示时就去要下一页。
+     *
+     * <p>太小（1 行）= 滚到底会停一下等下个包；太大 = 一开界面就白拉一堆。
+     * 6 行大约是一屏的 1/3，正常滚动速度下用户察觉不到接缝。</p>
+     */
+    public static final int PREFETCH_ROWS = 6;
+
+    /**
+     * 搜索框停止输入多久之后才真去问服务端。
+     *
+     * <p>每敲一个字都发一次 {@code recipe_query}，服务端有 50 ms 限流 + 一次全表排序，
+     * 打「铁剑」两个字就会把前一次的请求挤掉。250 ms 让「连续打字」只发最后一次。</p>
+     */
+    public static final long SEARCH_DEBOUNCE_MS = 250L;
+
     /** 二次确认窗口：3 秒内再点同一条才真删 */
     public static final long CONFIRM_WINDOW_MS = 3000L;
 
+    /** 匹配度：显示名与搜索词完全相等（最该置顶） */
+    public static final int RANK_EXACT = 0;
+    /** 匹配度：显示名以搜索词开头 */
+    public static final int RANK_PREFIX = 1;
+    /** 匹配度：显示名包含搜索词 */
+    public static final int RANK_CONTAINS = 2;
+    /** 匹配度：只有物品 id 包含搜索词（玩家看到的可能是完全不相干的中文名） */
+    public static final int RANK_ID = 3;
+    /** 完全没匹配上 */
+    public static final int RANK_NONE = Integer.MAX_VALUE;
+
     private RecipeBrowseModel() {
     }
+
+    // ------------------------------------------------------------------ 搜索
+
+    /**
+     * 规范化搜索词：去首尾空白 + 小写。
+     *
+     * <p>用 {@link Locale#ROOT} 而不是默认区域：土耳其语区域会把 {@code I} 小写成 {@code ı}，
+     * 于是「Iron」在那边搜不到 {@code iron}。这类 bug 只在特定系统语言下复现，最难查。</p>
+     */
+    public static String normalizeQuery(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** 去掉 {@code minecraft:} 前缀：玩家搜「oak」时不该被命名空间挡住 */
+    public static String bareId(String itemId) {
+        if (itemId == null) {
+            return "";
+        }
+        int colon = itemId.indexOf(':');
+        return colon >= 0 ? itemId.substring(colon + 1) : itemId;
+    }
+
+    /**
+     * 一条配方对搜索词的匹配度，<b>越小越该置顶</b>。
+     *
+     * @param query       玩家输入的搜索词（可为空 = 不过滤，恒 {@link #RANK_EXACT}）
+     * @param displayName 客户端本地化显示名（可能为 null：客户端不认识这个 id）
+     * @param itemId      产物物品 id（全名或裸 path 都行）
+     * @return {@link #RANK_EXACT} … {@link #RANK_ID}，或 {@link #RANK_NONE}
+     */
+    public static int matchRank(String query, String displayName, String itemId) {
+        String q = normalizeQuery(query);
+        if (q.isEmpty()) {
+            return RANK_EXACT;
+        }
+        String name = normalizeQuery(displayName);
+        // 显示名解析不出来时拿 id 的 path 顶上：至少还能按 id 搜到，比整条消失好
+        if (name.isEmpty()) {
+            name = normalizeQuery(bareId(itemId));
+        }
+        if (name.equals(q)) {
+            return RANK_EXACT;
+        }
+        if (name.startsWith(q)) {
+            return RANK_PREFIX;
+        }
+        if (name.contains(q)) {
+            return RANK_CONTAINS;
+        }
+        String bare = normalizeQuery(bareId(itemId));
+        String full = normalizeQuery(itemId);
+        if ((!bare.isEmpty() && bare.contains(q)) || (!full.isEmpty() && full.contains(q))) {
+            return RANK_ID;
+        }
+        return RANK_NONE;
+    }
+
+    /** 是否匹配（界面/白名单只需要这个布尔） */
+    public static boolean matches(String query, String displayName, String itemId) {
+        return matchRank(query, displayName, itemId) != RANK_NONE;
+    }
+
+    /**
+     * 滚到第几行时该去要下一页。
+     *
+     * @param lastVisibleRow 当前画出来的最后一行的下标（0 基；没有任何行时传 -1）
+     * @param loaded         已经拿到的条数
+     * @param total          服务端说一共有多少条（白名单过滤后的）
+     * @return {@code true} = 该去要下一页
+     */
+    public static boolean shouldPrefetch(int lastVisibleRow, int loaded, int total) {
+        if (loaded <= 0 || loaded >= total) {
+            return false;
+        }
+        return lastVisibleRow + 1 + PREFETCH_ROWS >= loaded;
+    }
+
+    /**
+     * 搜索框防抖：把「每帧轮询到的输入」翻译成「这一刻该应用的搜索词」。
+     *
+     * <p>为什么不用定时器：界面每帧都会轮询一次输入框，这个类只做三个判断 ——
+     * 变了就重新计时、没变且已应用就什么都不做、停够 {@code delayMs} 才吐出新词。
+     * 全部由调用方传时钟，所以能在单测里精确到毫秒地验。</p>
+     */
+    public static final class SearchDebounce {
+
+        private String pending = "";
+        private long pendingAt;
+        private String applied = "";
+
+        /**
+         * @param raw     输入框里此刻的文字（原样，内部会规范化）
+         * @param now     当前时刻（毫秒）
+         * @param delayMs 停多久才算「打完了」
+         * @return 该应用的搜索词；{@code null} = 这一帧什么都不用做
+         */
+        public String poll(String raw, long now, long delayMs) {
+            String norm = normalizeQuery(raw);
+            if (!norm.equals(this.pending)) {
+                this.pending = norm;
+                this.pendingAt = now;
+                return null;
+            }
+            if (norm.equals(this.applied)) {
+                return null;
+            }
+            if (now - this.pendingAt < delayMs) {
+                return null;
+            }
+            this.applied = norm;
+            return norm;
+        }
+
+        /** 已经应用的搜索词（界面拿它显示「搜索中」） */
+        public String applied() {
+            return this.applied;
+        }
+
+        /** 强制同步（关界面 / 断线重开）：下一次 {@link #poll} 会立刻返回这个词 */
+        public void reset(String value) {
+            this.pending = normalizeQuery(value);
+            this.applied = this.pending;
+            this.pendingAt = 0L;
+        }
+    }
+
+    // ------------------------------------------------------------------ 分页
 
     /**
      * 把页码夹到合法范围。
      *
      * <p>删除之后总页数会变小，客户端拿着旧页码来问是常态（服务端也做同样的夹取，
-     * 见 {@code RecipeQueryPayload} 的头注释）。这里先夹一次是为了界面显示正确 ——
-     * 否则会出现「第 9 / 4 页」这种自相矛盾的标题。</p>
+     * 见 {@code RecipeQueryPayload} 的头注释）。这里先夹一次是为了不发出明显越界的请求。</p>
      *
      * @param page     客户端当前页码（0 基，可能为负）
      * @param total    过滤后的总条数（服务端回的）
@@ -57,8 +232,7 @@ public final class RecipeBrowseModel {
     /**
      * 总页数，<b>至少 1</b>。
      *
-     * <p>返回 0 会让界面出现「第 1 / 0 页」，也会让 {@link #clampPage} 夹出 -1。
-     * 空本子显示「1 / 1」比显示「0 / 0」更像人话。</p>
+     * <p>返回 0 会让 {@link #clampPage} 夹出 -1。</p>
      */
     public static int pageCount(int total, int pageSize) {
         if (total <= 0 || pageSize <= 0) {
@@ -66,6 +240,8 @@ public final class RecipeBrowseModel {
         }
         return (total + pageSize - 1) / pageSize;
     }
+
+    // ------------------------------------------------------------------ 行文本
 
     /** 行标题：{@code 铁剑 ×1}。产出数恒显示 —— 「×1」也是信息（一次产几个） */
     public static String rowLabel(String displayName, int outputCount) {
@@ -85,11 +261,29 @@ public final class RecipeBrowseModel {
         return "原料：" + String.join("、", renderedParts);
     }
 
-    /** 顶部状态行：{@code 已用 137 / 2048 · 第 1 / 18 页 · 共 137 条} */
-    public static String usageLine(int used, int max, int page, int total, int pageSize) {
-        return "已用 " + used + " / " + max
-                + " · 第 " + (clampPage(page, total, pageSize) + 1) + " / " + pageCount(total, pageSize) + " 页"
-                + " · 共 " + Math.max(0, total) + " 条";
+    /**
+     * 顶部状态行。
+     *
+     * <p>0.5.0 起<b>不再显示页码</b>：列表连续滚动，报「第 3 / 18 页」只会让玩家去找
+     * 那个已经不存在的翻页按钮。改报「已显示 32 / 137 条」，滚到底会自己涨。</p>
+     *
+     * @param used    本子实际占用条数（服务端 {@code index.used}）
+     * @param max     上限（2048）
+     * @param loaded  客户端手上已有多少条
+     * @param total   服务端说这份筛选下一共有多少条
+     * @param query   当前搜索词（空 = 没在搜索）
+     */
+    public static String statusLine(int used, int max, int loaded, int total, String query) {
+        String head = "已用 " + Math.max(0, used) + " / " + max;
+        String q = normalizeQuery(query);
+        int shownTotal = Math.max(0, total);
+        if (q.isEmpty()) {
+            return head + " · 已显示 " + Math.max(0, loaded) + " / " + shownTotal + " 条";
+        }
+        if (shownTotal == 0) {
+            return head + " · 搜索「" + q + "」：没有匹配";
+        }
+        return head + " · 搜索「" + q + "」：" + Math.max(0, loaded) + " / " + shownTotal + " 条";
     }
 
     /** 一次点击的结果 */

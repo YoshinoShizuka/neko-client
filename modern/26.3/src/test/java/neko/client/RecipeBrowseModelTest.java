@@ -9,19 +9,26 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link RecipeBrowseModel} 的判据（纯逻辑，不启动游戏）。
  *
  * <h2>为什么这些值得单独测</h2>
- * <p>配方本的「浏览」在界面上看是一堆按钮，但真正会出错、且出错后最难查的是三件事：</p>
+ * <p>配方本的「浏览」在界面上看是一堆按钮，但真正会出错、且出错后最难查的是这几件事：</p>
  * <ol>
  *   <li><b>页码夹取</b>：删一条之后总页数变少，客户端拿着旧页码去问是常态。
- *       夹错了会出现「第 9 / 4 页」，或者干脆负页码被服务端夹回第 1 页然后界面跳一下。</li>
+ *       夹错了会把负页码递给服务端，然后界面跳一下。</li>
  *   <li><b>页数至少 1</b>：返回 0 会让 {@code clampPage} 夹出 -1，然后渲染时下标崩。</li>
  *   <li><b>删除确认</b>：服务端是全局真删、没有撤销，误删由全服承担。
  *       确认窗口一旦写成「有 id 就删」，玩家点 A 再点 B 就会把 B 删掉。</li>
+ *   <li><b>搜索匹配度</b>（0.5.0）：匹配度就是「置顶」的依据。分错级的话玩家搜「铁剑」，
+ *       第一屏却是「铁块」—— 功能看着能用，实际不能用。</li>
+ *   <li><b>滚动预取</b>（0.5.0）：判早了 = 一开界面白拉一堆包；判晚了 = 滚到底卡住。
+ *       边界两侧各咬一次。</li>
+ *   <li><b>搜索防抖</b>（0.5.0）：不防抖就等于每敲一个字发一包，服务端 50ms 限流会把前一次的
+ *       请求挤掉，玩家看到的是「搜索结果和输入框对不上」。</li>
  * </ol>
  */
 class RecipeBrowseModelTest {
@@ -134,15 +141,30 @@ class RecipeBrowseModelTest {
         }
 
         @Test
-        @DisplayName("C4 状态行：页码显示是 1 基，且用夹取后的值")
-        void usageLine() {
-            assertEquals("已用 137 / 2048 · 第 1 / 18 页 · 共 137 条",
-                    RecipeBrowseModel.usageLine(137, 2048, 0, 137, 8));
-            // 页码越界时显示末页，不显示「第 99 / 18 页」
-            assertEquals("已用 137 / 2048 · 第 18 / 18 页 · 共 137 条",
-                    RecipeBrowseModel.usageLine(137, 2048, 99, 137, 8));
-            assertEquals("已用 0 / 2048 · 第 1 / 1 页 · 共 0 条",
-                    RecipeBrowseModel.usageLine(0, 2048, 0, 0, 8));
+        @DisplayName("C4 状态行不再报页码，改报「已显示 X / Y 条」")
+        void statusLine() {
+            assertAll(
+                    () -> assertEquals("已用 137 / 2048 · 已显示 32 / 137 条",
+                            RecipeBrowseModel.statusLine(137, 2048, 32, 137, "")),
+                    () -> assertEquals("已用 0 / 2048 · 已显示 0 / 0 条",
+                            RecipeBrowseModel.statusLine(0, 2048, 0, 0, "")),
+                    // 搜索态要能一眼看到「筛出了多少」
+                    () -> assertEquals("已用 137 / 2048 · 搜索「铁」：8 / 12 条",
+                            RecipeBrowseModel.statusLine(137, 2048, 8, 12, "铁")),
+                    () -> assertEquals("已用 137 / 2048 · 搜索「铁」：没有匹配",
+                            RecipeBrowseModel.statusLine(137, 2048, 0, 0, "铁")),
+                    // null 搜索词 = 浏览态，别抛 NPE
+                    () -> assertEquals("已用 1 / 2048 · 已显示 0 / 5 条",
+                            RecipeBrowseModel.statusLine(1, 2048, 0, 5, null)));
+        }
+
+        @Test
+        @DisplayName("C5 状态行里永远不许再出现「页」")
+        void statusLineNeverSpeaksPages() {
+            // 0.5.0 把翻页按钮删了。再出现「第 N / M 页」就是在指一个不存在的功能。
+            assertAll(
+                    () -> assertFalse(RecipeBrowseModel.statusLine(1, 2048, 8, 12, "铁").contains("页")),
+                    () -> assertFalse(RecipeBrowseModel.statusLine(1, 2048, 8, 12, "").contains("页")));
         }
     }
 
@@ -296,6 +318,158 @@ class RecipeBrowseModelTest {
                     assertFalse(line.isBlank(), phase + " 有空行");
                 }
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("F 搜索匹配度（决定谁置顶）")
+    class Rank {
+
+        @Test
+        @DisplayName("F1 四级匹配度：完全相等 > 前缀 > 包含 > 只命中 id")
+        void fourLevels() {
+            assertAll(
+                    () -> assertEquals(RecipeBrowseModel.RANK_EXACT,
+                            RecipeBrowseModel.matchRank("铁剑", "铁剑", "minecraft:iron_sword")),
+                    () -> assertEquals(RecipeBrowseModel.RANK_PREFIX,
+                            RecipeBrowseModel.matchRank("铁", "铁剑", "minecraft:iron_sword")),
+                    () -> assertEquals(RecipeBrowseModel.RANK_CONTAINS,
+                            RecipeBrowseModel.matchRank("剑", "铁剑", "minecraft:iron_sword")),
+                    () -> assertEquals(RecipeBrowseModel.RANK_ID,
+                            RecipeBrowseModel.matchRank("sword", "铁剑", "minecraft:iron_sword")),
+                    () -> assertEquals(RecipeBrowseModel.RANK_NONE,
+                            RecipeBrowseModel.matchRank("钻石", "铁剑", "minecraft:iron_sword")));
+        }
+
+        @Test
+        @DisplayName("F2 大小写与首尾空白都不影响（用 Locale.ROOT，不受系统语言影响）")
+        void normalizesInput() {
+            assertAll(
+                    () -> assertEquals(RecipeBrowseModel.RANK_EXACT,
+                            RecipeBrowseModel.matchRank("  IRON  ", "Iron", null)),
+                    () -> assertEquals(RecipeBrowseModel.RANK_PREFIX,
+                            RecipeBrowseModel.matchRank(" Oak ", "Oak Planks", "minecraft:oak_planks")),
+                    () -> assertEquals("iron", RecipeBrowseModel.normalizeQuery("  IRON ")),
+                    () -> assertEquals("", RecipeBrowseModel.normalizeQuery(null)));
+        }
+
+        @Test
+        @DisplayName("F3 id 搜索不用带命名空间")
+        void idWithoutNamespace() {
+            assertAll(
+                    () -> assertEquals("oak_planks", RecipeBrowseModel.bareId("minecraft:oak_planks")),
+                    () -> assertEquals("oak_planks", RecipeBrowseModel.bareId("oak_planks")),
+                    () -> assertEquals("", RecipeBrowseModel.bareId(null)),
+                    // 玩家打「oak」而显示名是中文时，靠 id 兜住
+                    () -> assertEquals(RecipeBrowseModel.RANK_ID,
+                            RecipeBrowseModel.matchRank("oak", "橡木木板", "minecraft:oak_planks")));
+        }
+
+        @Test
+        @DisplayName("F4 显示名为 null 时退回 id 的 path，不许把这条判成「没匹配」")
+        void nullNameFallsBackToId() {
+            // 客户端装了服务端没有的模组时 displayNameOf 返回 null —— 这时按 id 还能搜到
+            assertEquals(RecipeBrowseModel.RANK_CONTAINS,
+                    RecipeBrowseModel.matchRank("planks", null, "minecraft:oak_planks"));
+        }
+
+        @Test
+        @DisplayName("F5 空搜索词 = 不过滤，恒 RANK_EXACT")
+        void emptyQueryMatchesEverything() {
+            assertAll(
+                    () -> assertEquals(RecipeBrowseModel.RANK_EXACT,
+                            RecipeBrowseModel.matchRank("", "随便什么", "minecraft:x")),
+                    () -> assertEquals(RecipeBrowseModel.RANK_EXACT,
+                            RecipeBrowseModel.matchRank(null, null, null)),
+                    () -> assertTrue(RecipeBrowseModel.matches("", "铁剑", "minecraft:iron_sword")),
+                    () -> assertFalse(RecipeBrowseModel.matches("钻石", "铁剑", "minecraft:iron_sword")));
+        }
+
+        @Test
+        @DisplayName("F6 排序结果：完全匹配的那条必须排在「只是 id 命中」的前面")
+        void exactBeatsIdHit() {
+            // 这就是「置顶」的判据：玩家搜「铁剑」时，叫「铁剑」的那条要在最上面，
+            // 而不是让「铁块（id 里有 iron）」压在它前面。
+            int exact = RecipeBrowseModel.matchRank("铁剑", "铁剑", "minecraft:iron_sword");
+            int prefix = RecipeBrowseModel.matchRank("铁剑", "铁剑碎片", "minecraft:iron_sword_shard");
+            int idOnly = RecipeBrowseModel.matchRank("铁剑", "铁块", "minecraft:iron_sword_block");
+            assertTrue(exact < prefix, "完全匹配应排在前面缀之前");
+            assertTrue(prefix < idOnly, "名字命中应排在只命中 id 之前");
+        }
+    }
+
+    @Nested
+    @DisplayName("G 滚动预取（0.5.0 不再翻页）")
+    class Prefetch {
+
+        @Test
+        @DisplayName("G1 还差得远时不预取")
+        void farFromBottomDoesNotPrefetch() {
+            // 32 条已加载，只画到第 3 行 ⇒ 不该再要下一页
+            assertFalse(RecipeBrowseModel.shouldPrefetch(3, 32, 137));
+        }
+
+        @Test
+        @DisplayName("G2 画到最后 PREFETCH_ROWS 行之内就该去要下一页")
+        void nearBottomPrefetches() {
+            int loaded = 32;
+            int lastRow = loaded - RecipeBrowseModel.PREFETCH_ROWS - 1;
+            assertTrue(RecipeBrowseModel.shouldPrefetch(lastRow, loaded, 137));
+            // 再往回一行就不该触发（边界两侧各咬一次）
+            assertFalse(RecipeBrowseModel.shouldPrefetch(lastRow - 1, loaded, 137));
+        }
+
+        @Test
+        @DisplayName("G3 已经全部加载、或本来就没内容时，绝不预取")
+        void stopsAtEnd() {
+            assertAll(
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(31, 32, 32), "已加载完"),
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(0, 0, 137), "一条都没有"),
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(5, 40, 10), "加载超了总数"),
+                    // 一行都没画（-1）但已经有数据：仍按「差 6 行」算，别把首次加载卡住
+                    () -> assertFalse(RecipeBrowseModel.shouldPrefetch(-1, 32, 137)));
+        }
+    }
+
+    @Nested
+    @DisplayName("H 搜索防抖（每敲一个字都发包会把服务端打爆）")
+    class Debounce {
+
+        @Test
+        @DisplayName("H1 刚敲完不立刻发，停够时间才发一次")
+        void waitsForTypingToStop() {
+            RecipeBrowseModel.SearchDebounce box = new RecipeBrowseModel.SearchDebounce();
+            assertNull(box.poll("铁", 1000L, 250L));
+            // 打第二个字：重新计时
+            assertNull(box.poll("铁剑", 1100L, 250L));
+            // 还在计时窗口内
+            assertNull(box.poll("铁剑", 1200L, 250L));
+            // 停够了才吐出来
+            assertEquals("铁剑", box.poll("铁剑", 1360L, 250L));
+            // 已经应用过，再轮询不该重复发
+            assertNull(box.poll("铁剑", 5000L, 250L));
+            assertEquals("铁剑", box.applied());
+        }
+
+        @Test
+        @DisplayName("H2 清空输入框也要走一次（否则列表卡在上一次的结果里）")
+        void clearingAlsoFires() {
+            RecipeBrowseModel.SearchDebounce box = new RecipeBrowseModel.SearchDebounce();
+            box.poll("铁", 0L, 250L);
+            assertEquals("铁", box.poll("铁", 300L, 250L));
+            assertNull(box.poll("", 400L, 250L));
+            assertEquals("", box.poll("", 700L, 250L));
+        }
+
+        @Test
+        @DisplayName("H3 reset 之后不会把旧词再吐一遍（关界面重开时用）")
+        void resetSwallowsOldText() {
+            RecipeBrowseModel.SearchDebounce box = new RecipeBrowseModel.SearchDebounce();
+            box.poll("铁", 0L, 250L);
+            assertEquals("铁", box.poll("铁", 300L, 250L));
+            box.reset("铁");
+            assertNull(box.poll("铁", 10_000L, 250L), "reset 过就不该再发一次");
+            assertEquals("铁", box.applied());
         }
     }
 }

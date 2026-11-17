@@ -9,30 +9,45 @@ import neko.voidwarehouse.recipe.RecipeQueryPayload;
 import java.util.List;
 
 /**
- * 配方本界面：一页 8 条配方，逐条可删。
+ * 配方本界面：一整本连续滚动，顶上有搜索框，逐条可删。
  *
- * <h2>长什么样</h2>
+ * <h2>0.5.0 长什么样</h2>
  * <pre>
- * 已用 137 / 2048 · 第 1 / 18 页 · 共 137 条
- * 上一页的结果…
- * ─────────────────────────────────────────
- * 铁剑 ×1                     原料：铁锭 ×2、木棍 ×1     [删除]
- * 铁镐 ×1                     原料：铁锭 ×3、木棍 ×2     [删除]
+ * 已用 137 / 2048 · 已显示 32 / 137 条
+ * ↓ 下面还有（继续往下滚）
+ * ──────────────────────────────────────────────
+ * [🔍 搜索产物名 / 物品 id                                    ]
+ * ──────────────────────────────────────────────
+ * [🗡] 铁剑 ×1       原料：铁锭 ×2、木棍 ×1          [删除]
+ * [⛏] 铁镐 ×1       原料：铁锭 ×3、木棍 ×2          [删除]
  * …
- * ─────────────────────────────────────────
- * [上一页] [下一页] [排序：按名字]                        [关闭]
+ * ──────────────────────────────────────────────
+ * [排序：按名字] [清空搜索] [重试]              [关闭]
  * </pre>
  *
+ * <h2>0.5.0：三个变化，各自解决一个真机问题</h2>
+ * <ol>
+ *   <li><b>翻页按钮没了</b>：0.4.x 一页 8 条 + 18 次「下一页」，找一条配方等于猜页码。
+ *       现在滚到底自动续拉（{@link RecipeClientState#noteVisibleRow}），页码不再进界面。</li>
+ *   <li><b>加了搜索框</b>：名字匹配只能在客户端做（专用服务器没有中文语言表），
+ *       匹配出的产物 id 白名单发给服务端重查，结果按匹配度置顶
+ *       （{@link RecipeBrowseModel#matchRank}）。</li>
+ *   <li><b>每行加了物品图标</b>：两行密排文字里认东西太慢（{@link WidgetListRecipeEntry}）。</li>
+ * </ol>
+ *
  * <h2>为什么继承 {@code GuiListBase} 而不是自己画</h2>
- * <p>滚动、键盘导航、条目命中的容差、hover 提示都是 malilib 已经写好的（Litematica 的
- * 材料列表同款）。自己画一遍只会多出三类 bug：滚轮方向、点偏 1px、翻页后滚动条不回位。
+ * <p>滚动、键盘导航、条目命中的容差、hover 提示、滚动条都是 malilib 已经写好的（Litematica 的
+ * 材料列表同款）。自己画一遍只会多出三类 bug：滚轮方向、点偏 1px、滚动条不回位。
  * 这里只提供「列表从哪来」和「一行长什么样」。</p>
  *
- * <h2>🔴 回包之后怎么刷新</h2>
- * <p>{@link RecipeClientState} 的回包回调只改字段 + 自增 {@code revision}，
- * <b>不碰任何控件</b>。界面在每帧的 {@link #drawContents} 里比对 revision，变了才
- * {@code reCreateListWidget()} —— 这样既不关心回调在哪个线程，也不会在渲染途中被
- * 另一个线程改列表（那种崩溃的堆栈一眼看不出是模组的锅）。</p>
+ * <h2>🔴 回包之后怎么刷新（0.5.0 更正）</h2>
+ * <p>0.4.9 的做法是「数据一变就 {@code reCreateListWidget()} + {@code initGui()}」。那能修好
+ * 「控件里是空的」，但带来了新问题：<b>每次回包都重建控件，搜索框里玩家刚打的字就没了</b>，
+ * 而且滚动位置被打回顶部。</p>
+ * <p>现在分两种：<b>只有版面变了</b>（提示行出现/消失）才重建控件；<b>数据变了</b>只调
+ * {@link WidgetListRecipe#refreshEntries()} —— 它是 public 的，做的正是
+ * {@code initGui} 里装数据那一步（清空 {@code listContents}、重填、重建可见行控件），
+ * 控件本身和搜索框都留着。</p>
  *
  * <h2>🔴 不再判「有没有开着仓库界面」（0.4.9 更正）</h2>
  * <p>第一版在这里判过 {@code containerMenu instanceof InventoryMenu}：不是容器界面就<b>连 hello 都不发</b>，
@@ -40,12 +55,6 @@ import java.util.List;
  * （{@code RecipeNetwork#dataOf} 只判规则与数据能不能取到），于是这条判断只剩一个效果：
  * 玩家在世界上按热键时，把一个本来会成功的请求挡在客户端，界面永远空着。</p>
  * <p>现在只做一件事：<b>发 hello，等 2 秒</b>。没回音才说话（{@link RecipeBrowseModel#hintLines}）。</p>
- *
- * <h2>这一版没有文本搜索</h2>
- * <p>服务端分页 ⇒ 客户端过滤只能筛当前页 8 条，搜「铁锭」而它在第 9 页时会被判「没有」。
- * 真搜索要把匹配出的产物 id 白名单发给服务端重取（{@code recipe_query.outputs} 已经支持），
- * 那需要输入框 + 跨版本键盘分发，留到下一版。当前按产物名排序 + 翻页，实测存档
- * （learned 十几条到一两百条）完全够用。</p>
  */
 public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, WidgetListRecipeEntry, WidgetListRecipe> {
 
@@ -67,7 +76,7 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
 
     private static RecipeBrowseGui current;
 
-    /** 上次看到的 revision：变了才重建列表 */
+    /** 上次看到的 revision：变了才重装列表数据 */
     private int seenRevision = -1;
 
     /** 当前要画的提示行（空 = 正常浏览，不占版面） */
@@ -75,6 +84,14 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
 
     /** 本次打开界面是否已经问过服务端（{@code initGui} 会被 resize 再调一次，别重复发 hello） */
     private boolean requestedOnOpen;
+
+    /**
+     * 搜索框原文的影子。
+     *
+     * <p>控件会被重建（版面变化 / resize），而重建出来的搜索框是空的 —— 必须把玩家打的字
+     * 回填进去。这里存一份，重建时用它。</p>
+     */
+    private String filterText = "";
 
     public RecipeBrowseGui() {
         super(LIST_X, LIST_Y);
@@ -109,22 +126,14 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         // 只问一次：resize 也会走到这里，重复发 hello 没意义（服务端还有 100ms 限流）
         if (!this.requestedOnOpen) {
             this.requestedOnOpen = true;
+            // 换语言后显示名会变（搜索结果与排序都靠它）
+            SearchCatalogResolver.clearCache();
             RecipeClientState.open();
         }
 
         int y = this.getScreenHeight() - 26;
         int x = 10;
         int btnHeight = 20;
-
-        // 上一页
-        this.addButton(new ButtonGeneric(x, y, 56, btnHeight, "上一页", "上一页（PageUp）"),
-                (base, mouseButton) -> RecipeClientState.requestPage(RecipeClientState.page() - 1));
-        x += 60;
-
-        // 下一页
-        this.addButton(new ButtonGeneric(x, y, 56, btnHeight, "下一页", "下一页（PageDown）"),
-                (base, mouseButton) -> RecipeClientState.requestPage(RecipeClientState.page() + 1));
-        x += 60;
 
         // 排序切换：服务端两种稳定序，客户端只报一个枚举
         boolean byName = RecipeClientState.sort() == RecipeQueryPayload.SORT_OUTPUT;
@@ -135,6 +144,19 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
                         ? RecipeQueryPayload.SORT_RECENT
                         : RecipeQueryPayload.SORT_OUTPUT));
         x += 100;
+
+        // 清空搜索：搜索框是 malilib 的控件，没有对外的 setter，只能通过列表控件转发
+        this.addButton(new ButtonGeneric(x, y, 72, btnHeight, "清空搜索",
+                "把搜索框清空，回到「整本按顺序看」"),
+                (base, mouseButton) -> {
+                    RecipeClientState.clearSearch();
+                    this.filterText = "";
+                    WidgetListRecipe list = this.getListWidget();
+                    if (list != null) {
+                        list.clearFilterText();
+                    }
+                });
+        x += 76;
 
         // 重试按钮恒在：按钮是在 initGui 里建的，而 NO_REPLY 要等 2 秒超时才会出现 ——
         // 若按 phase 决定加不加，它永远来不及被建出来（0.4.8 就是这么错过的）。
@@ -149,7 +171,9 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
                 (base, mouseButton) -> this.closeGui(true));
 
         // 提示行会占版面：先把列表位置摆对，别等下一帧才发现压住了第一行
-        this.applyHintLayout(RecipeClientState.phase());
+        this.hints = RecipeBrowseModel.hintLines(RecipeClientState.phase());
+        this.relayout();
+        this.seenRevision = RecipeClientState.revision();
     }
 
     @Override
@@ -162,21 +186,32 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
 
     @Override
     public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks) {
-        // 🔴 先判超时：没有它，服务端不回包时这里会永远转圈
-        RecipeClientState.tickProbe();
+        // 搜索框的文字没有回调，只能每帧读一次（读的是控件里的原文，不是列表的过滤结果）
+        WidgetListRecipe list = this.getListWidget();
+        if (list != null) {
+            this.filterText = list.filterText();
+        }
+
+        // 🔴 先判超时与搜索防抖：没有它，服务端不回包时这里会永远转圈
+        RecipeClientState.tickProbe(this.filterText);
         this.refreshIfNeeded();
 
-        // 状态行：已用 / 页码 / 总条数
+        // 状态行：已用 / 已显示 / 搜索词
         this.drawString(ctx,
-                RecipeBrowseModel.usageLine(RecipeClientState.used(), RecipeClientState.MAX_RECIPES,
-                        RecipeClientState.page(), RecipeClientState.total(),
-                        RecipeClientState.pageSize()),
+                RecipeBrowseModel.statusLine(RecipeClientState.used(), RecipeClientState.MAX_RECIPES,
+                        RecipeClientState.entries().size(), RecipeClientState.total(),
+                        RecipeClientState.search()),
                 TEXT_X, INFO_Y, 0xFFFFFFFF);
 
-        // 第二行：删除回执 / 翻页超时提示（没有内容时不画，避免一条空行）
+        // 第二行：删除回执 / 请求超时 / 「下面还有」
         String status = RecipeClientState.status();
         if (!status.isEmpty()) {
             this.drawString(ctx, status, TEXT_X, STATUS_Y, 0xFFFFD060);
+        } else if (RecipeClientState.hasMore()) {
+            this.drawString(ctx, RecipeClientState.search().isEmpty()
+                            ? "↓ 下面还有（继续往下滚会自动加载）"
+                            : "正在按匹配度排序…",
+                    TEXT_X, STATUS_Y, 0xFFAAAAAA);
         }
 
         // 提示行：PROBING / NO_REPLY 各自的说法，正常浏览时为空
@@ -189,44 +224,71 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
             y += HINT_LINE_HEIGHT;
         }
 
-        // 空本提示只在「真拿到了索引且一条都没有」时画 —— 探测阶段画这句是撒谎
-        if (this.hints.isEmpty() && RecipeClientState.phase() == RecipeBrowseModel.Phase.READY
-                && RecipeClientState.entries().isEmpty() && RecipeClientState.total() == 0) {
-            this.drawString(ctx, "配方本是空的（合成成功一次就会记进来）", TEXT_X, LIST_Y, 0xFFAAAAAA);
-        }
+        this.drawEmptyHint(ctx);
 
         super.drawContents(ctx, mouseX, mouseY, partialTicks);
     }
 
     /**
-     * 数据/阶段变了就重建列表。
+     * 「空的」和「没搜到」必须分开说。
+     *
+     * <p>画在搜索框下面那一行（列表顶边 + 24），因为列表自己占着上方 23px 的搜索框 ——
+     * 直接画在 {@code LIST_Y} 会被它压住。</p>
+     */
+    private void drawEmptyHint(GuiContext ctx) {
+        if (!this.hints.isEmpty() || RecipeClientState.phase() != RecipeBrowseModel.Phase.READY
+                || !RecipeClientState.entries().isEmpty() || RecipeClientState.total() != 0) {
+            return;
+        }
+        int y = LIST_Y + this.hintSpace() + 24;
+        if (RecipeClientState.search().isEmpty()) {
+            this.drawString(ctx, "配方本是空的（合成成功一次就会记进来）", TEXT_X, y, 0xFFAAAAAA);
+        } else {
+            this.drawString(ctx, "没有匹配的配方（换个词试试，也可以只打半个名字）",
+                    TEXT_X, y, 0xFFAAAAAA);
+        }
+    }
+
+    /**
+     * 数据/版面变了就刷新列表。
      *
      * <p>只在这里做，因为 {@code drawContents} 才是「渲染这一帧」的入口 —— 在别处改控件
      * 可能正好撞上 malilib 在遍历控件列表（那是 {@code ConcurrentModificationException}，
      * 但报错堆栈会指向渲染器，看着完全不像模组的问题）。</p>
      */
     private void refreshIfNeeded() {
+        List<String> nextHints = RecipeBrowseModel.hintLines(RecipeClientState.phase());
+        boolean layoutChanged = !nextHints.equals(this.hints);
         int rev = RecipeClientState.revision();
-        if (rev == this.seenRevision) {
+        if (!layoutChanged && rev == this.seenRevision) {
             return;
         }
         this.seenRevision = rev;
-        this.applyHintLayout(RecipeClientState.phase());
+        this.hints = nextHints;
+
+        WidgetListRecipe list = this.getListWidget();
+        if (list == null || layoutChanged) {
+            // 版面变了 ⇒ 列表的位置/高度都变了，而 posX/posY 是构造参数 ⇒ 只能重建
+            this.relayout();
+            return;
+        }
+        // 只是数据变了 ⇒ 重装数据即可。搜索框里的字和滚动位置都留着（0.4.9 在这里重建控件，
+        // 结果就是「打字打到一半，列表一刷新字没了、滚动条还跳回顶部」）。
+        list.refreshEntries();
     }
 
     /**
-     * 重新算提示行 + 把列表摆到提示行下面 + <b>把数据装进控件</b>。
+     * 重建列表控件并把数据装进去。
      *
      * <p>🔴 {@code reCreateListWidget()} 只是 {@code new} 了一个控件，<b>不会装数据</b>：
      * malilib 的 {@code WidgetListBase} 把条目存在自己的 {@code listContents} 里，
      * 而往里面灌 {@code getAllEntries()} 的只有 {@code refreshEntries()}，
      * 它唯一的调用者是 {@code WidgetListBase#initGui()}（{@code GuiListBase#initGui} 会替我们调）。
-     * 我们是在 {@code GuiListBase.initGui} <b>之后</b>才重建控件的（数据变了才重建），
-     * 所以必须自己补 {@code setSize + initGui} —— 少了这一步，控件拿到的永远是空列表：
-     * 真机表现就是「共 15 条 / 第 1 / 2 页」而底下一行都没有，且日志里一条异常都没有。</p>
+     * 我们是在 {@code GuiListBase.initGui} <b>之后</b>才重建控件的，所以必须自己补
+     * {@code setSize + initGui} —— 少了这一步，控件拿到的永远是空列表：
+     * 真机 0.4.9 的表现就是「共 15 条」而底下一行都没有，且日志里一条异常都没有。</p>
      */
-    private void applyHintLayout(RecipeBrowseModel.Phase phase) {
-        this.hints = RecipeBrowseModel.hintLines(phase);
+    private void relayout() {
         this.setListPosition(LIST_X, LIST_Y + this.hintSpace());
         this.reCreateListWidget();
 
@@ -237,6 +299,8 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         // 与 GuiListBase.initGui 完全同序：先给尺寸（算 browserEntryWidth / 可见行数），再 initGui 装数据
         list.setSize(this.getBrowserWidth(), this.getBrowserHeight());
         list.initGui();
+        // 重建出来的是新搜索框（空的）⇒ 把玩家打的字还回去
+        list.setFilterText(this.filterText);
         // 换页 / 换排序 / 删除之后滚动条必须回顶，否则新内容从半截开始显示
         list.resetScrollbarPosition();
     }
