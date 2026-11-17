@@ -212,17 +212,33 @@ public class RecipeBrowseGui extends GuiListBase<RecipePagePayload.Entry, Widget
         }
         this.seenRevision = rev;
         this.applyHintLayout(RecipeClientState.phase());
-        if (this.getListWidget() != null) {
-            // 换页 / 换排序 / 删除之后滚动条必须回顶，否则新内容从半截开始显示
-            this.getListWidget().resetScrollbarPosition();
-        }
     }
 
-    /** 重新算提示行 + 把列表摆到提示行下面（提示行数量变了列表高度也得跟着变） */
+    /**
+     * 重新算提示行 + 把列表摆到提示行下面 + <b>把数据装进控件</b>。
+     *
+     * <p>🔴 {@code reCreateListWidget()} 只是 {@code new} 了一个控件，<b>不会装数据</b>：
+     * malilib 的 {@code WidgetListBase} 把条目存在自己的 {@code listContents} 里，
+     * 而往里面灌 {@code getAllEntries()} 的只有 {@code refreshEntries()}，
+     * 它唯一的调用者是 {@code WidgetListBase#initGui()}（{@code GuiListBase#initGui} 会替我们调）。
+     * 我们是在 {@code GuiListBase.initGui} <b>之后</b>才重建控件的（数据变了才重建），
+     * 所以必须自己补 {@code setSize + initGui} —— 少了这一步，控件拿到的永远是空列表：
+     * 真机表现就是「共 15 条 / 第 1 / 2 页」而底下一行都没有，且日志里一条异常都没有。</p>
+     */
     private void applyHintLayout(RecipeBrowseModel.Phase phase) {
         this.hints = RecipeBrowseModel.hintLines(phase);
         this.setListPosition(LIST_X, LIST_Y + this.hintSpace());
         this.reCreateListWidget();
+
+        WidgetListRecipe list = this.getListWidget();
+        if (list == null) {
+            return;
+        }
+        // 与 GuiListBase.initGui 完全同序：先给尺寸（算 browserEntryWidth / 可见行数），再 initGui 装数据
+        list.setSize(this.getBrowserWidth(), this.getBrowserHeight());
+        list.initGui();
+        // 换页 / 换排序 / 删除之后滚动条必须回顶，否则新内容从半截开始显示
+        list.resetScrollbarPosition();
     }
 
     /** 提示行占掉的竖直空间（0 = 不占，正常浏览时版面与以前完全一样） */

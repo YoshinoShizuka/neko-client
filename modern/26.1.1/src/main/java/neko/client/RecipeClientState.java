@@ -1,6 +1,8 @@
 package neko.client;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import neko.client.RecipeBrowseModel.Phase;
 import neko.voidwarehouse.recipe.RecipeChangedPayload;
 import neko.voidwarehouse.recipe.RecipeDeletePayload;
@@ -48,6 +50,15 @@ public final class RecipeClientState {
      * （客户端根本加载不到）现实。</p>
      */
     public static final int MAX_RECIPES = 2048;
+
+    /**
+     * 审计日志（与 {@link PayloadChannels} 同一个 logger 名）。
+     *
+     * <p>🔴 加它是因为「界面空白」这种故障从日志里一个字都看不出来：0.4.9 两轮真机
+     * （先是没有自动取页、后是控件没装数据）都得靠猜。索引/分页/删除都是低频动作，
+     * 一次会话几行，不影响日志可读性。</p>
+     */
+    private static final Logger LOGGER = LoggerFactory.getLogger("neko-client");
 
     /**
      * 能力探测阶段 —— 枚举与「每个阶段说什么」都在 {@link RecipeBrowseModel} 里。
@@ -400,6 +411,8 @@ public final class RecipeClientState {
         outputs = payload.outputs() == null ? List.of() : List.copyOf(payload.outputs());
         pageRetries = 0;
         revision++;
+        LOGGER.info("[recipe] index: total={} used={} gen={} canDelete={}",
+                total, used, generation, canDelete);
         // 🔴 索引只管「有多少条、叫什么」，一页明细要单独要。这里不接一拳，界面就是空列表 ——
         // 真机 0.4.9 的表现：标题写着「共 15 条 / 第 1 / 2 页」，底下一行都没有。
         requestPage(page);
@@ -427,6 +440,8 @@ public final class RecipeClientState {
             pageRetries = 0;
         }
         revision++;
+        LOGGER.info("[recipe] page {}: {} 条（total={} gen={}）",
+                page, entries.size(), total, generation);
     }
 
     /** 删除回执：逐条处理，失败的那条必须留在界面上（不能乐观删除后不回滚） */
@@ -438,6 +453,8 @@ public final class RecipeClientState {
         List<String> removed = payload.removed() == null ? List.of() : payload.removed();
         List<RecipeDeleteResultPayload.Failure> failed =
                 payload.failed() == null ? List.of() : payload.failed();
+        LOGGER.info("[recipe] delete result: status={} removed={} failed={}",
+                payload.status(), removed.size(), failed.size());
         status = switch (payload.status()) {
             case RecipeDeleteResultPayload.OK -> "已删除 " + removed.size() + " 条";
             case RecipeDeleteResultPayload.PARTIAL -> "删掉 " + removed.size()
