@@ -99,6 +99,8 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 [上一页] [下一页] [排序：按名字]                        [关闭]
 ```
 
+- **打开就能看到内容**：索引（多少条、叫什么）和一页明细是两个包，界面收完索引会自动要第一页；
+  万一那一下丢了，还会自己补要两次（仍拿不到才写「没能取到这一页」）。
 - **删除要点两次**：第一次按钮变成「确认删除？」，3 秒内再点才真发。一份本子全服共用、**没有撤销**，所以确认这一步必须留着。
 - **只认已经记进来的配方**：合成成功一次才会往里加；删掉之后再成功合成一次会重新记上（`recipeId` 由内容算出，同一条配方永远是同一个 id）。
 - **排序**：「按名字」= 产物 id 字典序（稳定，翻页不会重复/漏条）；「最近学习」= 刚学会的在最前。
@@ -125,7 +127,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **1057 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **1063 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
