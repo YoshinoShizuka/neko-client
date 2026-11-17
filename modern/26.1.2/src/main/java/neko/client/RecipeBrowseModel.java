@@ -101,6 +101,63 @@ public final class RecipeBrowseModel {
     }
 
     /**
+     * 能力探测阶段。
+     *
+     * <p>放在这里（而不是 {@link RecipeClientState}）是为了让「每个阶段说什么话」能被单测咬住 ——
+     * 0.4.8 第一版的真机故障就是界面永远停在 {@link #PROBING}，而那条提示语没有任何断言。</p>
+     *
+     * <h2>🔴 为什么「没回应」要分成两种</h2>
+     * <p>服务端的闸门是三道（见 {@code RecipeNetwork#openedMenu}）：规则开着、<b>玩家正开着自己的
+     * 仓库界面</b>、权限。任何一道没过，服务端都是<b>静默 return、一个包都不发</b> ——
+     * 它有意不向可疑客户端确认通道存在。于是「没回包」在客户端眼里是三种完全不同的处境：</p>
+     * <ul>
+     *   <li>没开着容器界面（玩家在野外按了热键）：{@link #NEED_CONTAINER}，这一种
+     *       <b>客户端自己就能判</b>（{@code containerMenu} 是不是原版背包菜单），不必等超时；</li>
+     *   <li>界面开着但规则关着 / 服务端版本旧：{@link #NO_REPLY}，只能靠超时；</li>
+     *   <li>对端连通道都没有：{@link #UNSUPPORTED}，入口不该出现。</li>
+     * </ul>
+     * <p>把它们合成一个「不支持」会让玩家永远看着转圈。</p>
+     */
+    public enum Phase {
+        /** 还什么都没问（没打开过界面 / 刚断线） */
+        IDLE,
+        /** 发过 hello，还没等到 index */
+        PROBING,
+        /** 拿到过 index，可以浏览 */
+        READY,
+        /** 没开着任意容器界面 ⇒ 服务端必然不回应，连 hello 都不发（客户端自己判出来的） */
+        NEED_CONTAINER,
+        /** hello 发出去了，2 秒内一个回包都没有（规则关着 / 服务端版本旧 / 会话刚失效） */
+        NO_REPLY,
+        /** 对端没有这条通道（旧服务端 / 纯原版服）⇒ 入口不该出现 */
+        UNSUPPORTED
+    }
+
+    /**
+     * 每个非浏览阶段该说什么。
+     *
+     * <p>三条硬要求：① 必须说清<b>要开哪个界面</b>（不是「请检查设置」）；② 必须给出
+     * <b>服务端版本门槛</b>（1.0.17+，否则玩家会以为是客户端的问题，反复重装）；
+     * ③ 不许出现「请稍候」这种没有终点的句子 —— 玩家分不出「稍候」和「永远」。</p>
+     */
+    public static List<String> hintLines(Phase phase) {
+        if (phase == null) {
+            return List.of();
+        }
+        return switch (phase) {
+            case PROBING -> List.of("正在向服务端要配方本…");
+            case NEED_CONTAINER -> List.of(
+                    "配方本要先打开虚空仓库：关掉这里 → 右键打开仓库 → 再按「打开配方本」热键",
+                    "（服务端只认「正开着的仓库界面」—— 这是它既有的权限边界）");
+            case NO_REPLY -> List.of(
+                    "服务端没回应：需要 carpet-Neko-Addition 1.0.17+，且 voidWarehouse 与 "
+                            + "voidWarehouseCraft 两条规则都开着",
+                    "规则已经开着的话，确认仓库界面还开着，然后点「重试」");
+            case IDLE, READY, UNSUPPORTED -> List.of();
+        };
+    }
+
+    /**
      * 删除的二次确认闸门。
      *
      * <p>语义只有三条，且全部可测：</p>

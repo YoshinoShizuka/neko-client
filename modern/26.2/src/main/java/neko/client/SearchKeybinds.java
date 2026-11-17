@@ -116,7 +116,7 @@ public final class SearchKeybinds {
             if (SearchClientState.isSearchFocused()) {
                 return false;
             }
-            if (RecipeClientState.phase() == RecipeClientState.Phase.UNSUPPORTED) {
+            if (RecipeClientState.phase() == RecipeBrowseModel.Phase.UNSUPPORTED) {
                 InfoUtils.printActionbarMessage("message.neko_client.recipes_unsupported");
                 return true;
             }

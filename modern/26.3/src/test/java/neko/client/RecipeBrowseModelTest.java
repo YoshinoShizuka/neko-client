@@ -235,4 +235,64 @@ class RecipeBrowseModelTest {
             assertEquals(RecipeBrowseModel.TapResult.ARMED, gate.tap("id-a", 1000L, WINDOW));
         }
     }
+    /**
+     * 阶段提示语。
+     *
+     * <h2>为什么这组也要测</h2>
+     * <p>0.4.8 第一版的真机故障是界面<b>永远</b>停在「正在向服务端要配方本…」——
+     * 代码全绿、单测全绿、jar 断言全绿，玩家看到的却是转圈。原因是服务端在闸门没过时
+     * 静默丢包，而客户端把「没回包」当成了「还在等」。教训：<b>提示语是功能的一部分</b>，
+     * 它必须说出「该去开哪个界面」和「服务端要什么版本」，而不能只是「请稍候」。</p>
+     */
+    @Nested
+    @DisplayName("E 阶段提示语")
+    class Hints {
+
+        @Test
+        @DisplayName("E1 没开着仓库时必须说清「先开虚空仓库」，并给出可执行的三步")
+        void needContainerSaysWhatToOpen() {
+            List<String> lines = RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.NEED_CONTAINER);
+            String all = String.join("", lines);
+            assertAll(
+                    () -> assertFalse(lines.isEmpty(), "这一阶段不能没有话"),
+                    () -> assertTrue(all.contains("虚空仓库"), "必须点名要先开哪个界面：\n" + all),
+                    () -> assertTrue(all.contains("右键"), "必须给出可执行的动作，而不是「请检查设置」：\n" + all),
+                    () -> assertTrue(all.contains("服务端"), "必须解释这是服务端的要求，否则玩家会去重装客户端"));
+        }
+
+        @Test
+        @DisplayName("E2 服务端没回应时必须写明版本门槛 1.0.17 与两条规则")
+        void noReplySaysVersionAndRules() {
+            List<String> lines = RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.NO_REPLY);
+            String all = String.join("", lines);
+            assertAll(
+                    () -> assertFalse(lines.isEmpty()),
+                    () -> assertTrue(all.contains("1.0.17"), "不写版本门槛，玩家会怀疑是客户端装错了：\n" + all),
+                    () -> assertTrue(all.contains("voidWarehouse") && all.contains("voidWarehouseCraft"),
+                            "两条规则缺一不可，必须点名：\n" + all),
+                    () -> assertTrue(all.contains("重试"), "要告诉玩家下一步能做什么：\n" + all));
+        }
+
+        @Test
+        @DisplayName("E3 能正常浏览时不许占版面（READY / IDLE / UNSUPPORTED 都是空）")
+        void readyHasNoHints() {
+            assertAll(
+                    () -> assertTrue(RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.READY).isEmpty()),
+                    () -> assertTrue(RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.IDLE).isEmpty()),
+                    () -> assertTrue(RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.UNSUPPORTED).isEmpty()),
+                    () -> assertTrue(RecipeBrowseModel.hintLines(null).isEmpty(), "null 不许炸"));
+        }
+
+        @Test
+        @DisplayName("E4 探测中有一行；任何阶段都不许出现「稍候」这种没有终点的句子")
+        void probingSaysWaiting() {
+            assertEquals(1, RecipeBrowseModel.hintLines(RecipeBrowseModel.Phase.PROBING).size());
+            for (RecipeBrowseModel.Phase phase : RecipeBrowseModel.Phase.values()) {
+                for (String line : RecipeBrowseModel.hintLines(phase)) {
+                    assertFalse(line.contains("稍候"), phase + " 出现了没有终点的提示：" + line);
+                    assertFalse(line.isBlank(), phase + " 有空行");
+                }
+            }
+        }
+    }
 }

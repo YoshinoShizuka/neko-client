@@ -1,6 +1,7 @@
 package neko.client;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import neko.client.RecipeBrowseModel.Phase;
 import neko.voidwarehouse.recipe.RecipeChangedPayload;
 import neko.voidwarehouse.recipe.RecipeDeletePayload;
 import neko.voidwarehouse.recipe.RecipeDeleteResultPayload;
@@ -48,23 +49,25 @@ public final class RecipeClientState {
      */
     public static final int MAX_RECIPES = 2048;
 
-    /** 能力探测阶段 */
-    public enum Phase {
-        /** 还什么都没问（没打开过界面 / 刚断线） */
-        IDLE,
-        /** 发过 hello，还没等到 index */
-        PROBING,
-        /** 拿到过 index，可以浏览 */
-        READY,
-        /** 对端没有这条通道（旧服务端 / 纯原版服）⇒ 入口不该出现 */
-        UNSUPPORTED
-    }
+    /**
+     * 能力探测阶段 —— 枚举与「每个阶段说什么」都在 {@link RecipeBrowseModel} 里。
+     *
+     * <p>这样 {@code hintLines} 能被单测覆盖（第一版永远转圈的故障，坏在提示语没有任何断言）。</p>
+     */
+    private static Phase phase = Phase.IDLE;
 
     private static final long HELLO_INTERVAL_MS = 100L;
     private static final long QUERY_INTERVAL_MS = 50L;
     private static final long DELETE_INTERVAL_MS = 1000L;
 
-    private static Phase phase = Phase.IDLE;
+    /**
+     * 发出去之后等多久算「服务端没回应」（hello 与 query 共用）。
+     *
+     * <p>服务端是<b>同步</b>处理这两条的（主线程收包、当场回），正常往返在几十毫秒内。
+     * 2 秒已经给了 20 倍余量 —— 超过还没回，就不是网络慢，而是包被服务端丢了。</p>
+     */
+    private static final long REPLY_TIMEOUT_MS = 2000L;
+
     private static int generation = -1;
     private static int total;
     private static int used;
@@ -81,7 +84,23 @@ public final class RecipeClientState {
     private static final RecipeBrowseModel.ConfirmGate GATE = new RecipeBrowseModel.ConfirmGate();
 
     private static long lastHelloAt;
+    /** 最近一次 hello 发出的时刻，用于 {@link #tickProbe} 判超时 */
+    private static long helloSentAt;
+    /**
+     * 打开界面那一刻有没有开着容器界面（见 {@link #open(boolean)}）。
+     *
+     * <p>「重试」按钮要读它：没开着仓库时重试也不该发包，否则会把一句准确的
+     * 「先开仓库」换成一句误导的「服务端没回应」。</p>
+     */
+    private static boolean containerAtOpen;
     private static long lastQueryAt;
+    /**
+     * 最近一次 query 发出的时刻；{@code 0} = 没有待决的翻页请求。
+     *
+     * <p>存在的理由和 {@link #helloSentAt} 一样：服务端在闸门没过时是静默丢包的，
+     * 没有这个字段，玩家点「下一页」只会看到页码不动、列表不换 —— 又是一种「没反应」。</p>
+     */
+    private static long pendingQueryAt;
     private static long lastDeleteAt;
 
     private RecipeClientState() {
@@ -93,9 +112,9 @@ public final class RecipeClientState {
         return phase;
     }
 
-    /** 界面该不该开：对端不支持时直接不给入口，而不是开一个永远空着的界面 */
+    /** 界面该不该开：对端连通道都没有时直接不给入口，而不是开一个永远空着的界面 */
     public static boolean supported() {
-        return phase == Phase.READY || phase == Phase.PROBING;
+        return phase != Phase.UNSUPPORTED;
     }
 
     public static int total() {
@@ -150,14 +169,29 @@ public final class RecipeClientState {
     // ------------------------------------------------------------------ 请求侧
 
     /**
-     * 界面刚打开：要一份索引（顺带探测对端支不支持）。
+     * 界面刚打开：先判「有没有开着容器界面」，再决定要不要真的问服务端。
      *
-     * <p>不做「不支持就报错」——{@link Phase#UNSUPPORTED} 的语义是「入口都不该出现」，
-     * 而这里已经是界面打开了，说明调用方判断过 {@link #supported()}。</p>
+     * @param containerOpen 打开界面的那一刻，玩家是不是正开着某个容器界面
+     *                      （即 {@code containerMenu} 不是原版背包菜单）。
+     *                      🔴 必须由调用方在<b>换屏之前</b>取好再传进来 —— 本类不引任何
+     *                      Minecraft 类，这是它能被单测覆盖、也能五版本逐字节相同的前提。
      */
-    public static void open() {
+    public static void open(boolean containerOpen) {
         status = "";
         GATE.clear();
+        pendingQueryAt = 0L;
+        containerAtOpen = containerOpen;
+        if (phase == Phase.NO_REPLY || phase == Phase.NEED_CONTAINER) {
+            // 重开界面就是一次「再试一次」：别让玩家非得去找重试按钮
+            phase = Phase.IDLE;
+            lastHelloAt = 0L;
+        }
+        if (!containerOpen) {
+            // 发出去也只会被服务端静默丢掉（闸门第二道），与其看着转圈，不如当场把条件说清
+            phase = Phase.NEED_CONTAINER;
+            revision++;
+            return;
+        }
         hello();
     }
 
@@ -176,12 +210,17 @@ public final class RecipeClientState {
             return;
         }
         phase = Phase.PROBING;
+        helloSentAt = now;
         ClientPlayNetworking.send(RecipeHelloPayload.INSTANCE);
         revision++;
     }
 
     /** 要某一页（50ms 限流，页码就地夹取） */
     public static void requestPage(int target) {
+        if (phase == Phase.NEED_CONTAINER) {
+            // 上方说明已经写着要先开仓库，再发也只会被服务端丢掉
+            return;
+        }
         long now = System.currentTimeMillis();
         if (now - lastQueryAt < QUERY_INTERVAL_MS) {
             return;
@@ -194,7 +233,9 @@ public final class RecipeClientState {
             return;
         }
         lastQueryAt = now;
-        page = page0;
+        pendingQueryAt = now;
+        // 🔴 page 不在这里改：服务端没回包时页面会显示「第 2 页」而列表还是第 1 页的内容，
+        // 那是最难查的一种谎话。页码一律以 onPage 收到的为准。
         ClientPlayNetworking.send(new RecipeQueryPayload(page0, pageSize, sort, whitelist));
         revision++;
     }
@@ -256,6 +297,50 @@ public final class RecipeClientState {
         return true;
     }
 
+    /**
+     * 界面每帧调一次：两条超时判据（hello 与 query）。
+     *
+     * <p>🔴 没有这一步，界面会永远停在「正在向服务端要配方本…」（真机就是这样：
+     * 玩家在游戏里按热键打开，服务端 {@code openedMenu} 三道闸门没过，一个回包都不发）。
+     * 「一直在转」和「功能没做」在玩家眼里没有区别。</p>
+     */
+    public static void tickProbe() {
+        long now = System.currentTimeMillis();
+        if (phase == Phase.PROBING && now - helloSentAt > REPLY_TIMEOUT_MS) {
+            // 超时该怎么说，取决于「打开时有没有开着仓库」：没开的话答案已经知道了
+            phase = containerAtOpen ? Phase.NO_REPLY : Phase.NEED_CONTAINER;
+            revision++;
+            return;
+        }
+        if (pendingQueryAt != 0L && now - pendingQueryAt > REPLY_TIMEOUT_MS) {
+            // 翻页被静默丢掉：页码不会再动，得有人告诉玩家为什么
+            pendingQueryAt = 0L;
+            status = "服务端没有回应（仓库界面还开着吗？）";
+            revision++;
+        }
+    }
+
+    /**
+     * 重试：把限流清零再来一次 hello。
+     *
+     * <p>只在 {@link Phase#NO_REPLY} 时给按钮 —— {@link Phase#NEED_CONTAINER} 重试没有意义
+     * （玩家得先关掉界面去开仓库，点了也是同样的结果）。</p>
+     */
+    public static void retry() {
+        phase = Phase.IDLE;
+        lastHelloAt = 0L;
+        pendingQueryAt = 0L;
+        status = "";
+        if (!containerAtOpen) {
+            // 没开着仓库：重试一百次也是同一个结果，别把「先开仓库」的说法冲掉
+            phase = Phase.NEED_CONTAINER;
+            revision++;
+            return;
+        }
+        hello();
+        revision++;
+    }
+
     /** 界面关掉 / 换页时清掉待确认，避免「上次的确认残留到新列表」 */
     public static void clearPending() {
         GATE.clear();
@@ -289,7 +374,9 @@ public final class RecipeClientState {
         GATE.clear();
         lastHelloAt = 0L;
         lastQueryAt = 0L;
+        pendingQueryAt = 0L;
         lastDeleteAt = 0L;
+        containerAtOpen = false;
         revision++;
     }
 
@@ -315,6 +402,7 @@ public final class RecipeClientState {
      */
     public static void onPage(RecipePagePayload payload) {
         phase = Phase.READY;
+        pendingQueryAt = 0L;
         if (payload.generation() < generation) {
             return;
         }

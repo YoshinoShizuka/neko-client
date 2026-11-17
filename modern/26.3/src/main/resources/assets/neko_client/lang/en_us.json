@@ -5,6 +5,8 @@
   "neko_client.config.comment.fillGesture": "Hold the fill combo and click a warehouse slot to withdraw that item\nuntil your inventory cannot hold any more. Loose mode fills loose stacks;\nshulker-box mode fills full boxes. The combo is on the Hotkeys tab.",
   "neko_client.config.name.fillCombo": "Fill combo",
   "neko_client.config.comment.fillCombo": "Hold this, then click a slot in the first 5 content rows to withdraw until\nyour inventory can hold no more (row 6 is navigation; your own inventory and\nhotbar are not fill targets). Combo = exactly one mouse button + any of\nShift / Ctrl / Alt. Since 0.4.7 the default is Ctrl+Alt+right click (BUTTON_2);\nfor left click change the mouse button to BUTTON_1, middle is BUTTON_3.\nOnly these three modifiers work on the keyboard side - Vanilla exposes only\ntheir state; binding a letter/number key marks the combo as unusable (the join\nlog says why). Matching is strict with no button-code tolerance: binding right\nnever triggers on left, and vice versa. The verdict log states the clicked and\nthe bound key code; a wrong region is reported as inventory / hotbar / nav row.\nEmpty = off.",
+  "neko_client.config.name.openRecipes": "Open Recipe Book",
+  "neko_client.config.comment.openRecipes": "Opens the recipe-book browser: every entry as \"output x count <- ingredients\", each deletable (two taps, shared by the whole server, no undo).\nRequires the void warehouse screen to be open and carpet-Neko-Addition 1.0.17+ on the server.",
   "neko_client.config.name.openGui": "Open config GUI",
   "neko_client.config.comment.openGui": "Opens this mod's config screen (toggles and hotkeys live there).",
   "neko_client.gui.title": "NekoCarpet Settings",
