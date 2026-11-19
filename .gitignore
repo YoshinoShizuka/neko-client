@@ -15,3 +15,6 @@ run/
 
 # 本地收集的发布产物（Release 走 CI artifacts，不提交）
 dist/
+
+# 排障手册 / 事故叙事：只留在本地，不上传远程仓库
+docs/
