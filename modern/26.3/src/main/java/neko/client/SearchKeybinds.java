@@ -52,6 +52,7 @@ public final class SearchKeybinds {
                 "message.neko_client.fill_off"));
         SearchConfig.OPEN_GUI.getKeybind().setCallback(new OpenGuiCallback());
         SearchConfig.OPEN_RECIPES.getKeybind().setCallback(new OpenRecipesCallback());
+        SearchConfig.WAREHOUSE_TAKE.getKeybind().setCallback(new WarehouseTakeCallback());
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -122,6 +123,23 @@ public final class SearchKeybinds {
             }
             GuiBase.openGui(new RecipeBrowseGui());
             return true;
+        }
+    }
+
+    /**
+     * 仓库补货：手持什么就向虚空仓库要什么（0.5.3）。
+     *
+     * <p>纯热键、不需要开界面；{@link WarehouseTakeNetwork#begin} 内部会自检手持物、
+     * 通道支持与「是否已有请求在飞」。搜索框聚焦时不触发（那一击属于输入）。</p>
+     */
+    private static final class WarehouseTakeCallback implements IHotkeyCallback {
+
+        @Override
+        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
+            if (action != KeyAction.PRESS || SearchClientState.isSearchFocused()) {
+                return false;
+            }
+            return WarehouseTakeNetwork.begin(net.minecraft.client.Minecraft.getInstance());
         }
     }
 

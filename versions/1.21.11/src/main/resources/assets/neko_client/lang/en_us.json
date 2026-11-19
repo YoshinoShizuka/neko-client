@@ -7,6 +7,8 @@
   "neko_client.config.comment.fillCombo": "Hold this, then click a slot in the first 5 content rows to withdraw until\nyour inventory can hold no more (row 6 is navigation; your own inventory and\nhotbar are not fill targets). Combo = exactly one mouse button + any of\nShift / Ctrl / Alt. Since 0.4.7 the default is Ctrl+Alt+right click (BUTTON_2);\nfor left click change the mouse button to BUTTON_1, middle is BUTTON_3.\nOnly these three modifiers work on the keyboard side - Vanilla exposes only\ntheir state; binding a letter/number key marks the combo as unusable (the join\nlog says why). Matching is strict with no button-code tolerance: binding right\nnever triggers on left, and vice versa. The verdict log states the clicked and\nthe bound key code; a wrong region is reported as inventory / hotbar / nav row.\nEmpty = off.",
   "neko_client.config.name.silenceChat": "Silence chat messages",
   "neko_client.config.comment.silenceChat": "When on, this client discards every chat message sent by the Void Warehouse: the [Void Warehouse] / [虚空仓库] prefixes and the unprefixed recipe-book continuation lines starting with the corner mark.\nDisplay only - the server still sends them and other players still see them; messages already in the chat history are kept. Off by default.",
+  "neko_client.config.name.warehouseTake": "Warehouse restock hotkey",
+  "neko_client.config.comment.warehouseTake": "Hold an item and press this hotkey to withdraw the same item from the Void Warehouse into your inventory, until it can hold no more.\nNo warehouse screen needed. Requires carpet-Neko-Addition 1.0.17+ on the server with voidWarehouse and voidWarehouseRestock both enabled. Unbound by default.",
   "neko_client.config.name.openRecipes": "Open Recipe Book",
   "neko_client.config.comment.openRecipes": "Opens the recipe-book browser: every entry as \"output x count <- ingredients\", each deletable (two taps, shared by the whole server, no undo).\nRequires the void warehouse screen to be open and carpet-Neko-Addition 1.0.17+ on the server.",
   "neko_client.config.name.openGui": "Open config GUI",
@@ -18,7 +20,16 @@
   "message.neko_client.search_on": "Void Warehouse · search box: ON",
   "message.neko_client.search_off": "Void Warehouse · search box: OFF",
   "message.neko_client.fill_on": "Void Warehouse · fill gesture: ON",
-  "message.neko_client.fill_off": "Void Warehouse · fill gesture: OFF"
-,
-  "message.neko_client.recipes_unsupported": "This server has no recipe-book channel (needs carpet-Neko-Addition 1.0.17+)"
+  "message.neko_client.fill_off": "Void Warehouse · fill gesture: OFF",
+  "message.neko_client.recipes_unsupported": "This server has no recipe-book channel (needs carpet-Neko-Addition 1.0.17+)",
+  "message.neko_client.warehouse_take_no_item": "Warehouse restock: nothing in hand",
+  "message.neko_client.warehouse_take_unsupported": "Warehouse restock: server unsupported (needs carpet-Neko-Addition 1.0.17+)",
+  "message.neko_client.warehouse_take_busy": "Warehouse restock: previous request still pending",
+  "message.neko_client.warehouse_take_failed": "Warehouse restock: failed to send request",
+  "message.neko_client.warehouse_take_rule_off": "Warehouse restock: rules off (voidWarehouse / voidWarehouseRestock)",
+  "message.neko_client.warehouse_take_empty": "Warehouse restock: item not in stock",
+  "message.neko_client.warehouse_take_full": "Warehouse restock: inventory full, nothing deducted",
+  "message.neko_client.warehouse_take_throttled": "Warehouse restock: too fast, try again shortly",
+  "message.neko_client.warehouse_take_bad_request": "Warehouse restock: unrecognised item",
+  "message.neko_client.warehouse_take_no_reply": "Warehouse restock: no reply from server"
 }
