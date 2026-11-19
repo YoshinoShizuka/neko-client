@@ -4,7 +4,6 @@ import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.gui.GuiMaterialList;
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
-import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
@@ -29,9 +28,13 @@ import java.util.List;
  *
  * <h2>算哪一张原理图</h2>
  * <p>🔴 之前固定算「所有启用的投影」，于是从任何一张图的材料列表点按钮都开出同一份表
- * （真机踩过）。范围现在由打开时那份材料列表决定（{@link ContainerScope}）：
- * 从蜂箱农场的材料列表点按钮，算的就是蜂箱农场。拿不到对应关系（热键从世界里直接打开）
- * 才退回「所有启用的投影」，标题会写「等 N 个」。</p>
+ * （真机踩过）。范围现在由打开时那份材料列表决定（{@link ContainerScope}）：</p>
+ * <ul>
+ *   <li><b>投影列表</b>（F6 → 已加载的投影 → 材料列表）⇒ 算<b>那个投影</b>的那张图；</li>
+ *   <li><b>加载原理图 / 原理图管理器</b>（F6 → 加载原理图 → 材料列表）⇒ 算<b>那份原理图文件</b>
+ *       本身 —— 它<b>可能还没被放置</b>，所以扫描单元是「一张图」而不是「一个投影」；</li>
+ *   <li>拿不到对应关系（热键从世界里直接打开）⇒ 退回「所有启用的投影」，标题会写「等 N 个」。</li>
+ * </ul>
  *
  * <h2>三列各是什么</h2>
  * <ul>
@@ -59,8 +62,8 @@ public final class ContainerFillMaterialList extends MaterialListBase {
 
     private long builtAtVersion;
     private QuickLitematicaContainerTotals.Scan lastScan = QuickLitematicaContainerTotals.Scan.EMPTY;
-    /** 这次算哪几个投影（由入口那份材料列表定，见 {@link ContainerScope}）。 */
-    private List<SchematicPlacement> scope = List.of();
+    /** 这次算哪几张图（由入口那份材料列表定，见 {@link ContainerScope}）。 */
+    private List<ContainerScope.Target> scope = List.of();
     /** 标题形态（原理图名字 + 容器材料），扫描时定下来。 */
     private ContainerTitle.Title title = ContainerTitle.of(List.of());
 
@@ -105,7 +108,7 @@ public final class ContainerFillMaterialList extends MaterialListBase {
     }
 
     /** 这次扫描的范围（{@link ContainerScope} 会读它，避免从本界面再点按钮时范围被放大）。 */
-    List<SchematicPlacement> scope() {
+    List<ContainerScope.Target> scope() {
         return this.scope;
     }
 

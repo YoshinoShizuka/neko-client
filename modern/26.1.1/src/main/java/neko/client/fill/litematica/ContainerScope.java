@@ -12,55 +12,61 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 「容器材料」要扫哪几个投影 —— 由<b>当前正在看的这份材料列表</b>决定。
+ * 「容器材料」要算哪一张原理图 —— 由<b>当前正在看的这份材料列表</b>决定。
  *
- * <h2>为什么需要它（真机踩过）</h2>
- * <p>之前的实现固定扫「世界里所有<b>启用</b>的投影」，于是不管从哪张原理图的材料列表点按钮，
- * 开出来的都是同一份东西：玩家在蜂箱农场的材料列表里点「容器材料」，
- * 弹出的标题却是「原理图'164K抗卸载7gt刷沙机' 等 3 个 · 容器材料」。
- * 按钮的意义是「看这一张图的容器里要装什么」，范围必须跟着入口走。</p>
+ * <h2>为什么需要它（真机踩过两次）</h2>
+ * <p>最早的实现固定扫「世界里所有<b>启用</b>的投影」，于是不管从哪张图的材料列表点按钮，
+ * 开出来的都是同一份东西（蜂箱农场点出来的是「164K抗卸载7gt刷沙机 等 3 个」）。
+ * 只按「投影」反推之后又漏了第二条入口：F6 →「加载原理图」/「原理图管理器」进来的是
+ * {@code MaterialListSchematic}，它<b>根本没有 placement</b>，于是又掉回「全部启用」——
+ * 出来的还是同一张表。</p>
  *
- * <h2>怎么从材料列表反推投影</h2>
- * <p>Litematica 有两种材料列表，都<b>没有</b>公开的「我对应哪个投影」的方法
- * （五版本 javap 逐个核对过）：</p>
+ * <h2>两种材料列表，两条路</h2>
  * <ul>
- *   <li>{@code MaterialListPlacement}（从投影列表点「材料列表」进来，最常见）：
- *       持有 {@code private final SchematicPlacement placement}，无 getter；</li>
- *   <li>{@code MaterialListSchematic}（从原理图管理器点「材料列表」进来）：
- *       持有 {@code private final LitematicaSchematic schematic}，无 getter。</li>
+ *   <li><b>投影列表</b>（{@code GuiSchematicPlacementsList}）→
+ *       {@code MaterialListPlacement}：持有 {@code private final SchematicPlacement placement}；</li>
+ *   <li><b>加载原理图 / 原理图管理器</b>（{@code GuiSchematicLoad$MaterialListCreator}）
+ *       → {@code MaterialListSchematic}：持有
+ *       {@code private final LitematicaSchematic schematic}，<b>跟有没有放置完全无关</b>。</li>
  * </ul>
- * <p>所以按<b>字段类型</b>反射取（{@link #fieldOfType}）：字段名不予依赖（Litematica 改个名字
- * 我们不会跟着挂），类型是 Litematica 自己的 public 类，稳定得多。取到之后：</p>
- * <ol>
- *   <li>拿到 {@code SchematicPlacement} ⇒ 就扫它一个（子区块启停状态、朝向、镜像都是这一份的）；</li>
- *   <li>只拿到 {@code LitematicaSchematic} ⇒ 扫「同一张图」的所有投影（先按对象身份，
- *       再按原理图名字兜底）；</li>
- *   <li>都拿不到（区域选择的材料列表、别人的实现）⇒ 退回「所有启用的投影」——
- *       也就是原来的行为，标题会写「等 N 个」，玩家至少能看出范围被放大了。</li>
- * </ol>
+ * <p>两者都<b>没有 getter</b>（五版本 javap 逐个核对过），所以按<b>字段类型</b>反射取
+ * （{@link ReflectField}）：字段名会改，类型是 Litematica 的 public 类。</p>
  *
- * <h2>为什么不改用「身份比对」反查</h2>
- * <p>{@code SchematicPlacement#getMaterialList()} 是懒加载 + 缓存，理论上可以遍历所有投影
- * 比引用。但那会给<b>每一个</b>投影都造一份材料列表（只为比对一次），而反射是只读的。
- * 顺序上反射在前，正是为了避开这种副作用。</p>
+ * <h2>🔴 关键：扫描单元是「一张原理图」，不是「一个投影」</h2>
+ * <p>把扫描单元写成 {@code SchematicPlacement} 是上一版的错误：没有 placement 的图无路可走，
+ * 只能退回「全部启用」。现在单元是 {@link Target}（名字 + {@code LitematicaSchematic}），
+ * placement 只是它的一种<b>来源</b> ⇒ 没放置的图照样算得出容器材料，
+ * 这正是「加载原理图 → 材料列表」这条路的正确答案。</p>
+ *
+ * <p>也不按「同一张图的所有投影」合并：一次只看一张图，标题写这一张的名字，
+ * 与 Litematica 自己的材料列表同粒度。</p>
  */
 public final class ContainerScope {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("neko-client");
 
+    /**
+     * 一次扫描的单元：<b>一张原理图</b> + 用来做标题的名字。
+     *
+     * @param name      标题里显示的名字（投影名或原理图元数据名），可为 {@code null}
+     * @param schematic 要读容器 NBT 的那张图
+     */
+    public record Target(String name, LitematicaSchematic schematic) {
+    }
+
     private ContainerScope() {
     }
 
     /**
-     * 解析出这次要扫的投影。
+     * 解析出这次要算哪几张图。
      *
      * <p>{@code source} 是打开界面前玩家正在看的那份材料列表，可以是 {@code null}
-     * （热键从世界里直接打开，或当前界面不是材料列表）。永远不返回 {@code null}，
-     * 也永远不返回空 —— 拿不到就退回「所有启用的投影」。</p>
+     * （热键从世界里直接打开，或当前界面不是材料列表）。永远不返回空 ——
+     * 拿不到就退回「所有启用的投影」并打日志。</p>
      */
-    public static List<SchematicPlacement> resolve(MaterialListBase source) {
+    public static List<Target> resolve(MaterialListBase source) {
         if (source instanceof ContainerFillMaterialList own) {
-            List<SchematicPlacement> kept = own.scope();
+            List<Target> kept = own.scope();
             if (!kept.isEmpty()) {
                 return kept;
             }
@@ -68,41 +74,48 @@ public final class ContainerScope {
         if (source == null) {
             return allEnabled();
         }
-        SchematicPlacement placement = fieldOfType(source, SchematicPlacement.class);
+        // 投影列表那条路：直接就是「这一个投影的那张图」。
+        SchematicPlacement placement = ReflectField.ofType(source, SchematicPlacement.class);
         if (placement != null && placement.getSchematic() != null) {
-            return List.of(placement);
+            return List.of(of(placement));
         }
-        LitematicaSchematic schematic = fieldOfType(source, LitematicaSchematic.class);
+        // 加载原理图 / 原理图管理器那条路：🔴 不需要它被放置。
+        LitematicaSchematic schematic = ReflectField.ofType(source, LitematicaSchematic.class);
         if (schematic != null) {
-            List<SchematicPlacement> same = sameSchematic(schematic);
-            if (!same.isEmpty()) {
-                return same;
-            }
+            return List.of(of(schematic));
         }
-        List<SchematicPlacement> all = allEnabled();
-        LOGGER.info("[容器填充物] 当前材料列表（{}）对不上任何投影，改扫全部启用投影 {} 个",
+        List<Target> all = allEnabled();
+        LOGGER.info("[容器填充物] 当前材料列表（{}）对不上任何原理图，改算全部启用投影 {} 个",
                 source.getClass().getSimpleName(), all.size());
         return all;
     }
 
-    /** 世界里所有<b>启用</b>的投影（原来的范围，现在只作兜底）。 */
-    public static List<SchematicPlacement> allEnabled() {
-        List<SchematicPlacement> placements = new ArrayList<>();
-        for (SchematicPlacement placement : allPlacements()) {
-            if (placement == null || !placement.isEnabled() || placement.getSchematic() == null) {
-                continue;
-            }
-            placements.add(placement);
+    /** 一个投影 → 它的那张图（名字用投影名：玩家在投影列表里看到的就是它）。 */
+    public static Target of(SchematicPlacement placement) {
+        if (placement == null) {
+            return new Target(null, null);
         }
-        return placements;
+        return new Target(placement.getName(), placement.getSchematic());
     }
 
-    /**
-     * 世界里注册的<b>全部</b>投影（不看启用状态）。
-     *
-     * <p>解析出的那一个不按启用状态过滤：玩家特意打开了这张图的材料列表，
-     * 投影暂时关着（在盖别的东西）也一样要看它的料单。</p>
-     */
+    /** 一张图 → 它自己（名字用元数据名，与「加载原理图」列表里显示的一致）。 */
+    public static Target of(LitematicaSchematic schematic) {
+        return new Target(nameOf(schematic), schematic);
+    }
+
+    /** 世界里所有<b>启用</b>的投影（只作兜底：热键从世界里直接打开时用）。 */
+    public static List<Target> allEnabled() {
+        List<Target> targets = new ArrayList<>();
+        for (SchematicPlacement placement : allPlacements()) {
+            if (!placement.isEnabled() || placement.getSchematic() == null) {
+                continue;
+            }
+            targets.add(of(placement));
+        }
+        return targets;
+    }
+
+    /** 世界里注册的全部投影（不看启用状态）；解析出的那一张不按启用状态过滤。 */
     static List<SchematicPlacement> allPlacements() {
         SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
         if (manager == null) {
@@ -117,49 +130,11 @@ public final class ContainerScope {
         return placements;
     }
 
-    /**
-     * 同一张原理图的所有投影：先按对象身份（同一个 {@code LitematicaSchematic} 实例），
-     * 再按原理图名字兜底（同一份文件被各自加载成两个实例时）。
-     */
-    static List<SchematicPlacement> sameSchematic(LitematicaSchematic target) {
-        List<SchematicPlacement> all = allPlacements();
-        List<SchematicPlacement> byIdentity = new ArrayList<>();
-        for (SchematicPlacement placement : all) {
-            if (placement.getSchematic() == target) {
-                byIdentity.add(placement);
-            }
-        }
-        if (!byIdentity.isEmpty()) {
-            return byIdentity;
-        }
-        String name = nameOf(target);
-        if (name == null || name.isEmpty()) {
-            return List.of();
-        }
-        List<SchematicPlacement> byName = new ArrayList<>();
-        for (SchematicPlacement placement : all) {
-            if (name.equals(nameOf(placement.getSchematic()))) {
-                byName.add(placement);
-            }
-        }
-        return byName;
-    }
-
     /** 原理图的元数据名字（{@code MaterialListSchematic#getName()} 取的也是它）。 */
     static String nameOf(LitematicaSchematic schematic) {
         if (schematic == null || schematic.getMetadata() == null) {
             return null;
         }
         return schematic.getMetadata().getName();
-    }
-
-    /**
-     * 按<b>类型</b>从对象（及其父类）里读一个字段 —— 不依赖字段名。
-     *
-     * <p>实现见 {@link ReflectField#ofType}：那条路径是这次修复的关键（读不到就会退回
-     * 「扫全部投影」，也就是原来的 bug），所以它被抽成零依赖的纯工具类并单独单测。</p>
-     */
-    static <T> T fieldOfType(Object owner, Class<T> type) {
-        return ReflectField.ofType(owner, type);
     }
 }

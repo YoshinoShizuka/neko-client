@@ -2,7 +2,6 @@ package neko.client.fill.litematica;
 
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
-import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -68,7 +67,7 @@ public final class QuickLitematicaContainerTotals {
      *
      * @param rows        按数量从多到少排好的合计表
      * @param names       参与合计的投影名字（按放置顺序），给标题用
-     * @param placements  参与合计的投影个数
+     * @param placements  参与合计的原理图张数（一张图算 1，与它被放置几次无关）
      * @param containers  真正带物品的容器个数
      * @param unreadable  有 {@code Items} 但整条读不出来的容器个数
      * @param truncated   是否撞上 {@link #MAX_BLOCK_ENTITIES} 提前收工
@@ -94,11 +93,12 @@ public final class QuickLitematicaContainerTotals {
     }
 
     /**
-     * 扫「当前正在看的那张原理图」。
+     * 算「当前正在看的那张原理图」。
      *
-     * <p>🔴 不能扫全部启用投影 —— 那会让所有入口都打开同一份表（真机踩过：
-     * 在蜂箱农场的材料列表里点「容器材料」，弹出的是另一张刷沙机的表）。
-     * 范围由 {@link ContainerScope} 从材料列表本身反推，拿不到才退回全部启用。</p>
+     * <p>🔴 不能扫全部启用投影 —— 那会让所有入口都打开同一份表（真机踩过两次：
+     * 在蜂箱农场的材料列表里点「容器材料」，弹出的是另一张刷沙机的表；
+     * 从「加载原理图」进去也一样）。范围由 {@link ContainerScope} 从材料列表本身反推，
+     * 拿不到才退回全部启用。</p>
      *
      * @param source 打开界面前玩家正在看的那份材料列表，可为 {@code null}
      */
@@ -106,24 +106,29 @@ public final class QuickLitematicaContainerTotals {
         return scanScope(ContainerScope.resolve(source));
     }
 
-    /** 扫描给定的一批投影（范围已由调用方决定）。 */
-    public static Scan scanScope(List<SchematicPlacement> placements) {
+    /**
+     * 算给定的一批图（范围已由调用方决定）。
+     *
+     * <p>单元是<b>一张原理图</b>而不是一个投影：从「加载原理图」进来的图可能压根没放置，
+     * 但它一样有容器 NBT 可读。</p>
+     */
+    public static Scan scanScope(List<ContainerScope.Target> targets) {
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || placements == null || placements.isEmpty()) {
+        if (client == null || client.level == null || targets == null || targets.isEmpty()) {
             return Scan.EMPTY;
         }
         long startedAt = System.nanoTime();
-        Scan scan = scan(placements, client.level.registryAccess());
-        LOGGER.info("[容器填充物] 合计 {} 种 / {} 件（投影 {} 个：{}，容器 {} 个{}），{} ms",
+        Scan scan = scan(targets, client.level.registryAccess());
+        LOGGER.info("[容器填充物] 合计 {} 种 / {} 件（原理图 {} 张：{}，容器 {} 个{}），{} ms",
                 scan.rows().size(), scan.totalItems(), scan.placements(),
                 String.join(" / ", scan.names()), scan.containers(),
                 scan.truncated() ? "，已截断" : "", (System.nanoTime() - startedAt) / 1_000_000L);
         return scan;
     }
 
-    /** 只扫给定的投影（{@link #scanScope} 的实际执行者；{@code placements} 已由调用方定好范围）。 */
-    static Scan scan(List<SchematicPlacement> placements, HolderLookup.Provider lookup) {
-        if (placements == null || placements.isEmpty() || lookup == null) {
+    /** 只算给定的图（{@link #scanScope} 的实际执行者；范围已由调用方定好）。 */
+    static Scan scan(List<ContainerScope.Target> targets, HolderLookup.Provider lookup) {
+        if (targets == null || targets.isEmpty() || lookup == null) {
             return Scan.EMPTY;
         }
         Map<String, Integer> counts = new LinkedHashMap<>();
@@ -134,8 +139,8 @@ public final class QuickLitematicaContainerTotals {
         boolean truncated = false;
 
         outer:
-        for (SchematicPlacement placement : placements) {
-            LitematicaSchematic schematic = placement.getSchematic();
+        for (ContainerScope.Target target : targets) {
+            LitematicaSchematic schematic = target == null ? null : target.schematic();
             if (schematic == null) {
                 continue;
             }
@@ -175,26 +180,26 @@ public final class QuickLitematicaContainerTotals {
             }
         }
 
-        return new Scan(toRows(counts, samples), namesOf(placements), placements.size(),
+        return new Scan(toRows(counts, samples), namesOf(targets), targets.size(),
                 containers, unreadable, truncated);
     }
 
     /**
-     * 纯逻辑：投影 → 名字列表（标题要用）。
+     * 纯逻辑：图 → 名字列表（标题要用）。
      *
-     * <p>用 {@code SchematicPlacement#getName()} 而不是 schematic 的元数据名字：
-     * 玩家在投影列表里看到的就是它（同一个原理图放两份时靠它区分）。</p>
+     * <p>名字在 {@link ContainerScope} 里就定好了：投影来的用 {@code SchematicPlacement#getName()}
+     * （玩家在投影列表里看到的就是它），「加载原理图」来的用元数据名（与那个列表一致）。</p>
      */
-    static List<String> namesOf(List<SchematicPlacement> placements) {
+    static List<String> namesOf(List<ContainerScope.Target> targets) {
         List<String> names = new ArrayList<>();
-        if (placements == null) {
+        if (targets == null) {
             return names;
         }
-        for (SchematicPlacement placement : placements) {
-            if (placement == null) {
+        for (ContainerScope.Target target : targets) {
+            if (target == null) {
                 continue;
             }
-            String name = placement.getName();
+            String name = target.name();
             names.add(name == null ? "" : name);
         }
         return names;
