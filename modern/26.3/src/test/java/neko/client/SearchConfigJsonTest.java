@@ -153,13 +153,14 @@ class SearchConfigJsonTest {
         for (boolean searchBox : new boolean[]{true, false}) {
             for (boolean fill : new boolean[]{true, false}) {
                 SearchConfigJson.Values written = new SearchConfigJson.Values(
-                        searchBox, fill, false,
+                        searchBox, fill, false, false,
                         SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                         SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                         SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
                         SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
                         SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
-                        SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE);
+                        SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE,
+                    SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL);
                 String text = SearchConfigJson.render(written);
                 SearchConfigJson.Values values = SearchConfigJson.parse(text);
                 assertEquals(written, values, "整份配置往返失真: " + text);
@@ -200,13 +201,14 @@ class SearchConfigJsonTest {
     void silenceChatRoundTrips() {
         for (boolean silence : new boolean[]{true, false}) {
             SearchConfigJson.Values written = new SearchConfigJson.Values(
-                    true, true, silence,
+                    true, true, silence, false,
                     SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                     SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                     SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
                     SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
                     SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
-                    SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE);
+                    SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE,
+                    SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL);
             String text = SearchConfigJson.render(written);
             assertAll(
                     () -> assertEquals(written, SearchConfigJson.parse(text)),
@@ -287,8 +289,8 @@ class SearchConfigJsonTest {
     @DisplayName("F3 组合键串往返不失真（malilib 的逗号分隔写法）")
     void comboHotkeyRoundTrips() {
         SearchConfigJson.Values written = new SearchConfigJson.Values(
-                true, false, true, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V",
-                "LEFT_ALT,G", "V,WAREHOUSE_TAKE");
+                true, false, true, false, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V",
+                "LEFT_ALT,G", "V,WAREHOUSE_TAKE", SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL);
         assertEquals(written, SearchConfigJson.parse(SearchConfigJson.render(written)));
     }
 
@@ -326,13 +328,14 @@ class SearchConfigJsonTest {
     @DisplayName("G2 清空后的空串要能穿过 render→parse 一轮（「关不掉」就是在这里丢的）")
     void clearedFillComboSurvivesRoundTrip() {
         SearchConfigJson.Values cleared = new SearchConfigJson.Values(
-                true, true, false,
+                true, true, false, false,
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                 "",   // ← 玩家在配置界面里把组合键清掉了
                 SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
                 SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
-                SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE);
+                SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE,
+                    SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL);
         SearchConfigJson.Values readBack = SearchConfigJson.parse(SearchConfigJson.render(cleared));
         assertEquals("", readBack.keyFillCombo(),
                 "清空后重进世界组合键又回来了 —— 表现为「关不掉这个手势」");
@@ -355,23 +358,55 @@ class SearchConfigJsonTest {
                         "正常值不能被空白判据误吞，但要 trim"));
     }
 
-    // ------------------------------------------------------------ 小工具
+    // ------------------------------------------------- 0.5.4：投影容器填充开关
 
-    private static SearchConfigJson.Values values(boolean searchBox, boolean fillGesture) {
-        return new SearchConfigJson.Values(searchBox, fillGesture, false,
+    @Test
+    @DisplayName("H1 🔴 projectionFill 默认 false：升级老玩家不能被突然改掉右键行为")
+    void projectionFillDefaultsOff() {
+        assertAll(
+                () -> assertFalse(SearchConfigJson.Values.defaults().projectionFill()),
+                () -> assertFalse(SearchConfigJson.parse("{}").projectionFill()),
+                () -> assertEquals("", SearchConfigJson.Values.defaults().keyContinuousFill()));
+    }
+
+    @Test
+    @DisplayName("H2 projectionFill 与 keyContinuousFill 能穿过 render→parse 且互不串位")
+    void projectionFillRoundTrips() {
+        SearchConfigJson.Values written = new SearchConfigJson.Values(
+                true, true, false, true,
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                 SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
                 SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
                 SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
-                SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE);
+                SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE,
+                "BUTTON_2");
+        String text = SearchConfigJson.render(written);
+        assertAll(
+                () -> assertEquals(written, SearchConfigJson.parse(text)),
+                () -> assertTrue(text.contains("\"projectionFill\": true")),
+                () -> assertTrue(text.contains("\"keyContinuousFill\": \"BUTTON_2\"")));
+    }
+
+    // ------------------------------------------------------------ 小工具
+
+    private static SearchConfigJson.Values values(boolean searchBox, boolean fillGesture) {
+        return new SearchConfigJson.Values(searchBox, fillGesture, false, false,
+                SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
+                SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
+                SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
+                SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
+                SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
+                SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE,
+                    SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL);
     }
 
     private static String renderWith(boolean searchBox, boolean fillGesture,
                                      String keySearchBox, String keyFillGesture,
                                      String keyOpenGui, String keyFillCombo) {
         return SearchConfigJson.render(new SearchConfigJson.Values(
-                searchBox, fillGesture, false, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui,
-                SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES, SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE));
+                searchBox, fillGesture, false, false, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui,
+                SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES, SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE,
+                SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL));
     }
 }

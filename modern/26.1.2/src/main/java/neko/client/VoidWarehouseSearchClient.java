@@ -4,9 +4,12 @@ import fi.dy.masa.malilib.config.ConfigManager;
 import fi.dy.masa.malilib.registry.Registry;
 import fi.dy.masa.malilib.util.data.ModInfo;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import neko.client.fill.QuickContainerCopy;
+import neko.client.fill.litematica.QuickLitematicaContainerAutofill;
 import neko.voidwarehouse.fill.FillRequestPayload;
 import neko.voidwarehouse.recipe.RecipeChangedPayload;
 import neko.voidwarehouse.recipe.RecipeDeletePayload;
@@ -97,6 +100,17 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         // 仓库补货（0.5.3）：printer_take C2S + result S2C 的注册、回执接收、tick 推进
         // 全在 WarehouseTakeNetwork 里，入口只把两个版本的 registry 递进去。
         WarehouseTakeNetwork.init(c2s, s2c);
+
+        // 投影容器填充（0.5.4）：两个 tick 监听器自己按 projectionFill 开关门禁，
+        // 未安装 litematica 时 getTemplateSnapshot 恒 null（不会崩）。
+        // 与 quickcraft 同时安装时桥接层强制关闭，避免两套逻辑抢同一次右键。
+        QuickContainerCopy copy = new QuickContainerCopy();
+        copy.onInitializeClient();
+        QuickLitematicaContainerAutofill autofill = new QuickLitematicaContainerAutofill();
+        autofill.onInitializeClient();
+        if (FabricLoader.getInstance().isModLoaded("quickcraft")) {
+            LOGGER.warn("[neko-client] 检测到 quickcraft 与本项目同时安装 ⇒ 投影容器填充已强制关闭，请卸载其中一个。");
+        }
 
         // 接收端：同一个 id 已被别人注册过时返回 false（后注册者覆盖前者）。
         // 拿不到 catalog 就等于搜索框永远不亮 —— 这里必须说明白，别让人以为是「功能没做」。

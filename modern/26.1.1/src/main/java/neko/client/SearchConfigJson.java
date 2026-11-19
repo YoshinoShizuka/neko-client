@@ -42,6 +42,8 @@ final class SearchConfigJson {
      * 想静音得自己去配置界面打开。反过来（默认开）会让玩家以为服务端不说话了。
      */
     static final boolean DEFAULT_SILENCE_CHAT = false;
+    /** 投影容器填充默认关：它是新功能，不能让升级后的老玩家突然改右键行为。 */
+    static final boolean DEFAULT_PROJECTION_FILL = false;
     static final String DEFAULT_KEY_SEARCH_BOX = "";
     static final String DEFAULT_KEY_FILL_GESTURE = "";
     static final String DEFAULT_KEY_OPEN_GUI = "";
@@ -51,6 +53,9 @@ final class SearchConfigJson {
 
     /** 热键补货（手持物 → 仓库取货），默认未绑定（不抢键位） */
     static final String DEFAULT_KEY_WAREHOUSE_TAKE = "";
+
+    /** 连续填充热键：需按住并右键连续开启投影容器，默认未绑定 */
+    static final String DEFAULT_KEY_CONTINUOUS_FILL = "";
 
     /**
      * 🔴 取满组合键<b>刻意给了默认值</b>（与上面三条相反，这是唯一例外）。
@@ -91,18 +96,21 @@ final class SearchConfigJson {
     record Values(boolean searchBox,
                   boolean fillGesture,
                   boolean silenceChat,
+                  boolean projectionFill,
                   String keySearchBox,
                   String keyFillGesture,
                   String keyFillCombo,
                   String keyOpenGui,
                   String keyOpenRecipes,
-                  String keyWarehouseTake) {
+                  String keyWarehouseTake,
+                  String keyContinuousFill) {
 
         static Values defaults() {
             return new Values(DEFAULT_SEARCH_BOX, DEFAULT_FILL_GESTURE, DEFAULT_SILENCE_CHAT,
+                    DEFAULT_PROJECTION_FILL,
                     DEFAULT_KEY_SEARCH_BOX, DEFAULT_KEY_FILL_GESTURE,
                     DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES,
-                    DEFAULT_KEY_WAREHOUSE_TAKE);
+                    DEFAULT_KEY_WAREHOUSE_TAKE, DEFAULT_KEY_CONTINUOUS_FILL);
         }
 
         /**
@@ -132,12 +140,14 @@ final class SearchConfigJson {
                 readBoolean(json, "searchBox", DEFAULT_SEARCH_BOX),
                 readBoolean(json, "fillGesture", DEFAULT_FILL_GESTURE),
                 readBoolean(json, "silenceChat", DEFAULT_SILENCE_CHAT),
+                readBoolean(json, "projectionFill", DEFAULT_PROJECTION_FILL),
                 readKey(json, "keySearchBox", DEFAULT_KEY_SEARCH_BOX),
                 readKey(json, "keyFillGesture", DEFAULT_KEY_FILL_GESTURE),
                 readKeyKeepingEmpty(json, "keyFillCombo", DEFAULT_KEY_FILL_COMBO),
                 readKey(json, "keyOpenGui", DEFAULT_KEY_OPEN_GUI),
                 readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES),
-                readKey(json, "keyWarehouseTake", DEFAULT_KEY_WAREHOUSE_TAKE));
+                readKey(json, "keyWarehouseTake", DEFAULT_KEY_WAREHOUSE_TAKE),
+                readKey(json, "keyContinuousFill", DEFAULT_KEY_CONTINUOUS_FILL));
     }
 
     /**
@@ -153,19 +163,24 @@ final class SearchConfigJson {
                   "_readme_fillCombo": "keyFillCombo 是「取满手势」的组合键，必须恰好包含一个鼠标键：BUTTON_1 = 左键、BUTTON_2 = 右键、BUTTON_3 = 中键（26.3 也可写 MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE）。0.4.7 起默认 LEFT_CONTROL,LEFT_ALT,BUTTON_2 = Ctrl+Alt+右键；想用左键就把它改成 BUTTON_1。判据严格匹配：绑右键时左键不会触发，反之亦然。只对前 5 行内容格生效（第 6 行是导航行，玩家背包/快捷栏不算）。写成空字符串 = 清空 = 关掉这个手势（开关开着也不响应）。",
                   "_readme_warehouseTake": "keyWarehouseTake 是「仓库补货」热键：手里拿着某物品按下，就从虚空仓库取同种物品塞进背包（取到放不下为止）。需要服务端 carpet-Neko-Addition 1.0.17+，且 voidWarehouse + voidWarehouseRestock 两条规则都开。默认未绑定。",
                   "_readme_silenceChat": "silenceChat = true 时，客户端直接丢弃虚空仓库发来的聊天提示（中文前缀 [虚空仓库]、英文前缀 [Void Warehouse]、配方本不带前缀的 └ 续行）。只影响这一台客户端的显示，不改动服务端行为，也清不掉已经显示过的历史消息。默认 false。",
+                  "_readme_projectionFill": "projectionFill = true 时开启投影容器填充：右键投影里的容器，打开后按投影内容逐格填充；keyContinuousFill 绑定后按住可连续跨容器填充。默认 false（新功能，不抢右键）。缺料走虚空仓库需要服务端 carpet-Neko-Addition 1.0.17+ 且打开 voidWarehouse / voidWarehouseRestock。",
                   "searchBox": %s,
                   "fillGesture": %s,
                   "silenceChat": %s,
+                  "projectionFill": %s,
                   "keySearchBox": "%s",
                   "keyFillGesture": "%s",
                   "keyFillCombo": "%s",
                   "keyOpenGui": "%s",
                   "keyOpenRecipes": "%s",
-                  "keyWarehouseTake": "%s"
+                  "keyWarehouseTake": "%s",
+                  "keyContinuousFill": "%s"
                 }
                 """.formatted(values.searchBox(), values.fillGesture(), values.silenceChat(),
+                values.projectionFill(),
                 values.keySearchBox(), values.keyFillGesture(), values.keyFillCombo(),
-                values.keyOpenGui(), values.keyOpenRecipes(), values.keyWarehouseTake());
+                values.keyOpenGui(), values.keyOpenRecipes(), values.keyWarehouseTake(),
+                values.keyContinuousFill());
     }
 
     /** 缺字段、类型不对（例如手改成字符串 {@code "false"}）一律回落到默认值 */

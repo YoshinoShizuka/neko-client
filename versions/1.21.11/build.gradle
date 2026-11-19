@@ -52,6 +52,14 @@ dependencies {
         exclude group: 'me.fallenbreath', module: 'conditional-mixin-fabric'
     }
 
+
+    // litematica（0.5.3 投影容器填充）：modCompileOnly —— 需要 loom remap 成 Mojang 名，
+    // 否则它内部的中间名读不了；不打进 jar、不作为硬依赖。
+    modCompileOnly("fi.dy.masa.litematica:${project.litematica_artifact}:${project.litematica_version}") {
+        exclude group: 'me.fallenbreath', module: 'conditional-mixin-fabric'
+        transitive = false
+    }
+
     // 共享纯逻辑（SearchIndex）：jar 打包时把它的 class 一并合并进来
     implementation project(':common')
 

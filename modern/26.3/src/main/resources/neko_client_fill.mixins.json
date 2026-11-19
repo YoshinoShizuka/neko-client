@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "neko.client.fill.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "GuiContinuousFillScreenMixin",
+    "MinecraftClientContinuousFillUseMixin",
+    "QuickContainerBackgroundFillScreenMixin"
+  ],
+  "mixins": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

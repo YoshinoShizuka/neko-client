@@ -96,6 +96,14 @@ public final class SearchConfig implements IConfigHandler {
             "", HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
+     * 投影容器填充（0.5.4）：右键投影里的容器 → 打开后按投影内容填充。
+     * 默认 false；这条不改变原版右键语义，除非玩家主动打开。
+     */
+    public static final ConfigBooleanHotkeyed PROJECTION_FILL = new ConfigBooleanHotkeyed(
+            "projectionFill", SearchConfigJson.DEFAULT_PROJECTION_FILL,
+            "", HOTKEY_SETTINGS).apply(PREFIX);
+
+    /**
      * 取满手势的<b>组合键</b>（0.4.7 起默认 Ctrl + Alt + 右键；只影响新生成的配置，
      * 已有的 {@code keyFillCombo} 不会被改写。想用左键就把鼠标键改成 {@code BUTTON_1}）。
      *
@@ -143,6 +151,10 @@ public final class SearchConfig implements IConfigHandler {
     public static final ConfigHotkey WAREHOUSE_TAKE = new ConfigHotkey(
             "warehouseTake", SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE, HOTKEY_SETTINGS).apply(PREFIX);
 
+    /** 连续填充：按住此键再右键，可跨容器连续填充（默认未绑定） */
+    public static final ConfigHotkey CONTINUOUS_FILL = new ConfigHotkey(
+            "continuousFill", SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL, HOTKEY_SETTINGS).apply(PREFIX);
+
     /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
@@ -152,8 +164,8 @@ public final class SearchConfig implements IConfigHandler {
      * malilib 的热键表（{@code addHotkeysForCategory} 要 {@code IHotkey}）。</p>
      */
     public static final List<IHotkey> OPTIONS =
-            List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, FILL_COMBO, OPEN_GUI, OPEN_RECIPES,
-                    WAREHOUSE_TAKE);
+            List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL, FILL_COMBO,
+                    OPEN_GUI, OPEN_RECIPES, WAREHOUSE_TAKE, CONTINUOUS_FILL);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -161,7 +173,8 @@ public final class SearchConfig implements IConfigHandler {
      * <p>它们都是 {@code ConfigBooleanHotkeyed}，一格里同时有复选框和按键按钮 ——
      * 也就是说<b>开关的热键本来就摆在这一行</b>，不需要在「快捷键」页再列一遍。</p>
      */
-    public static final List<IHotkey> GUI_FEATURES = List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT);
+    public static final List<IHotkey> GUI_FEATURES =
+            List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL);
 
     /**
      * 配置界面「快捷键」页：纯热键条目（不带开关的）。
@@ -170,7 +183,7 @@ public final class SearchConfig implements IConfigHandler {
      * 「取满」开关只回答开不开，<b>按哪个键</b>在这一页。</p>
      */
     public static final List<IHotkey> GUI_HOTKEYS =
-            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, WAREHOUSE_TAKE);
+            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, WAREHOUSE_TAKE, CONTINUOUS_FILL);
 
     /** 给 malilib 的 {@code ConfigManager} 用（它会自己 new 一个；本类只有静态状态） */
     public SearchConfig() {
@@ -207,10 +220,12 @@ public final class SearchConfig implements IConfigHandler {
             SEARCH_BOX.setBooleanHotkeyValue(Pair.of(values.searchBox(), values.keySearchBox()));
             FILL_GESTURE.setBooleanHotkeyValue(Pair.of(values.fillGesture(), values.keyFillGesture()));
             SILENCE_CHAT.setBooleanValue(values.silenceChat());
+            PROJECTION_FILL.setBooleanValue(values.projectionFill());
             FILL_COMBO.setHotkeyStringValue(values.keyFillCombo());
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
             WAREHOUSE_TAKE.setHotkeyStringValue(values.keyWarehouseTake());
+            CONTINUOUS_FILL.setHotkeyStringValue(values.keyContinuousFill());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -224,11 +239,13 @@ public final class SearchConfig implements IConfigHandler {
         Pair<Boolean, String> fill = FILL_GESTURE.getBooleanHotkeyValue();
         String text = SearchConfigJson.render(new SearchConfigJson.Values(
                 box.getLeft(), fill.getLeft(), SILENCE_CHAT.getBooleanValue(),
+                PROJECTION_FILL.getBooleanValue(),
                 box.getRight(), fill.getRight(),
                 FILL_COMBO.getHotkeyStringValue(),
                 OPEN_GUI.getHotkeyStringValue(),
                 OPEN_RECIPES.getHotkeyStringValue(),
-                WAREHOUSE_TAKE.getHotkeyStringValue()));
+                WAREHOUSE_TAKE.getHotkeyStringValue(),
+                CONTINUOUS_FILL.getHotkeyStringValue()));
 
         Path path = file();
         try {
@@ -270,6 +287,11 @@ public final class SearchConfig implements IConfigHandler {
     /** 聊天静音开关（只影响这一台客户端的显示，不改动服务端行为） */
     public static boolean isChatSilenced() {
         return SILENCE_CHAT.getBooleanValue();
+    }
+
+    /** 投影容器填充是否启用（默认 false） */
+    public static boolean isProjectionFillEnabled() {
+        return PROJECTION_FILL.getBooleanValue();
     }
 
     /**

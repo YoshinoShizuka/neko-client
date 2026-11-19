@@ -41,6 +41,14 @@ dependencies {
         exclude group: 'me.fallenbreath', module: 'conditional-mixin-fabric'
     }
 
+
+    // litematica（0.5.3 投影容器填充）：compileOnly —— 只在编译期引用它的投影 API，
+    // 不打进 jar、不作为硬依赖；没装 litematica 的玩家仍能用其余功能。
+    compileOnly("fi.dy.masa.litematica:${project.litematica_artifact}:${project.litematica_version}") {
+        exclude group: 'me.fallenbreath', module: 'conditional-mixin-fabric'
+        transitive = false
+    }
+
     // 共享纯逻辑（SearchIndex）：jar 打包时把它的 class 一并合并进来
     implementation project(':common')
 
