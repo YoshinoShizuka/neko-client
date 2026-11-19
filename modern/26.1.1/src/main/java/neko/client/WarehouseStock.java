@@ -90,8 +90,22 @@ public final class WarehouseStock {
     /** 快照版本：每次整份替换 +1，界面靠它决定要不要重算「已有」。 */
     private static long snapshotVersion;
 
-    /** 最近被问到的物品 id（保持顺序便于排查），用于拼查询清单。材料列表可能在构建线程调用，需同步。 */
-    private static final Set<String> DEMAND = new LinkedHashSet<>();
+    /**
+     * 材料列表当前要看的物品 id（保持顺序便于排查），用来拼查询清单。
+     *
+     * <p>🔴 0.5.7 起<b>发出去之后不再清空</b>：所谓 5 秒一次刷新本来就是靠它拼清单的，
+     * 清掉就只剩「打开界面那一次」真的问过。换了投影由 {@link #forgetDemand()} 整份替换。
+     * 材料列表可能在构建线程调用，需同步。</p>
+     */
+    private static final Set<String> WATCHED = new LinkedHashSet<>();
+    /**
+     * 复用 printer 缓存时没有版本号可听：自己记住上次读到的数，变了才让界面重算。
+     * 与 {@link #WATCHED} 共用同一把锁。
+     */
+    private static final Map<String, Long> LAST_SEEN = new HashMap<>();
+    private static long lastFingerprintTick = Long.MIN_VALUE;
+    /** 指纹别每 tick 都比一次（上百个 id × 反射调用，没必要 20 Hz）。 */
+    private static final int FINGERPRINT_INTERVAL_TICKS = 10;
     private static volatile long lastDemandTick = Long.MIN_VALUE;
 
     private static int nextNonce = 1;
@@ -183,7 +197,9 @@ public final class WarehouseStock {
      * 服务端认的就是 id 字符串，这里直接进清单。</p>
      */
     public static void noteDemand(Collection<String> ids) {
-        if (!isSourceEnabled() || ids == null || ids.isEmpty() || !ownsChannel) {
+        // 🔴 不再因为「通道归 printer」就跳过：通道不在我们手上时，这份清单用来
+        //    比对 printer 缓存的数字有没有变（fingerprintPrinterCache），照样必须有。
+        if (!isSourceEnabled() || ids == null || ids.isEmpty()) {
             return;
         }
         Minecraft client = Minecraft.getInstance();
@@ -191,17 +207,30 @@ public final class WarehouseStock {
             return;
         }
         lastDemandTick = client.level.getGameTime();
-        synchronized (DEMAND) {
+        synchronized (WATCHED) {
             for (String id : ids) {
                 if (id == null || id.isEmpty()) {
                     continue;
                 }
-                if (DEMAND.size() >= PrinterQueryPayload.MAX_IDS) {
+                if (WATCHED.size() >= PrinterQueryPayload.MAX_IDS) {
                     break;
                 }
-                DEMAND.add(id);
+                WATCHED.add(id);
             }
         }
+    }
+
+    /**
+     * 换了一张材料列表：旧需求与「上次看到的数」一起丢掉。
+     *
+     * <p>不清就会跨投影累积 —— 上限一撞，新投影的物品永远问不到。</p>
+     */
+    public static void forgetDemand() {
+        synchronized (WATCHED) {
+            WATCHED.clear();
+            LAST_SEEN.clear();
+        }
+        lastFingerprintTick = Long.MIN_VALUE;
     }
 
     /**
@@ -211,25 +240,9 @@ public final class WarehouseStock {
         if (!isSourceEnabled() || stack == null || stack.isEmpty()) {
             return;
         }
-        Minecraft client = Minecraft.getInstance();
-        if (client.level == null) {
-            return;
-        }
-        lastDemandTick = client.level.getGameTime();
-        if (!ownsChannel) {
-            // 通道不归我们（printer 缓存这条路不需要自己拼清单）。
-            return;
-        }
         String id = idOf(stack);
-        if (id == null) {
-            return;
-        }
-        synchronized (DEMAND) {
-            // LinkedHashSet 自己会去重；满了就直接跳过新 id，不再做一次 O(n) 的 contains。
-            if (DEMAND.size() >= PrinterQueryPayload.MAX_IDS) {
-                return;
-            }
-            DEMAND.add(id);
+        if (id != null) {
+            noteDemand(List.of(id));
         }
     }
 
@@ -261,6 +274,36 @@ public final class WarehouseStock {
         return printerWarehouseAmountOf(id);
     }
 
+    /**
+     * 材料列表的行是不是由 litematica-printer 在画。
+     *
+     * <p>它给 {@code WidgetMaterialListEntry.render} 加了 Redirect：缓存就绪时
+     * 「缺失」列画的是 {@code netGap(total, getCountMissing())} 再减 {@code getCountAvailable()}
+     * —— 也就是它假定 {@code missing} 与 {@code available} 是<b>两个独立的量</b>
+     * （原版语义：missing = 还没建成的方块数，available = 手上已有的货）。
+     * 本表的 missing 本来就是「需求 − 已有」，让它再减一次会把缺口算成
+     * {@code total - 2 × available}。所以这个值为 true 时
+     * {@code ContainerEntry#getCountMissing()} 必须给 {@code total}，让它的减法落在正确的起点上。</p>
+     */
+    public static boolean rowsRenderedByPrinter() {
+        return printerCache != null && printerReady();
+    }
+
+    /** printer 缓存是否已经同步到数据（反射调用；出错按「没有」处理）。 */
+    private static boolean printerReady() {
+        if (printerCache == null || printerIsReadyMethod == null) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(printerIsReadyMethod.invoke(printerCache));
+        } catch (Throwable throwable) {
+            printerCache = null;
+            printerAmountOfMethod = null;
+            printerIsReadyMethod = null;
+            return false;
+        }
+    }
+
     /** 读 printer 的缓存；不可用或没同步到任何数据时返回 0。 */
     private static long printerWarehouseAmountOf(String id) {
         if (printerCache == null || printerAmountOfMethod == null || printerIsReadyMethod == null) {
@@ -281,12 +324,44 @@ public final class WarehouseStock {
         }
     }
 
+    /**
+     * 盯 printer 缓存里的数字有没有变。
+     *
+     * <p>它的缓存只有 {@code apply / clear / amountOf / isReady / size}，没有任何变更通知，
+     * 所以只能自己比对：每 {@value #FINGERPRINT_INTERVAL_TICKS} tick 把
+     * {@link #WATCHED} 里的 id 读一遍，有变化就 {@code snapshotVersion++}，
+     * 界面据此重算「已有 / 缺失」和表头合计。</p>
+     */
+    private static void fingerprintPrinterCache(long now) {
+        if (lastFingerprintTick != Long.MIN_VALUE
+                && now - lastFingerprintTick < FINGERPRINT_INTERVAL_TICKS) {
+            return;
+        }
+        lastFingerprintTick = now;
+        if (printerCache == null) {
+            return;
+        }
+        boolean changed = false;
+        synchronized (WATCHED) {
+            for (String id : WATCHED) {
+                long amount = printerWarehouseAmountOf(id);
+                Long previous = LAST_SEEN.put(id, amount);
+                if (previous == null || previous.longValue() != amount) {
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            snapshotVersion++;
+        }
+    }
+
     private static void tick(Minecraft client) {
         if (client.player == null || client.level == null) {
             clear();
             return;
         }
-        if (!isSourceEnabled() || !ownsChannel || !isSupported()) {
+        if (!isSourceEnabled() || !isSupported()) {
             if (ready || !AMOUNTS.isEmpty()) {
                 clearSnapshot();
             }
@@ -294,6 +369,13 @@ public final class WarehouseStock {
         }
 
         long now = client.level.getGameTime();
+
+        if (!ownsChannel) {
+            // 复用 printer 的缓存：这条通道的接收器在它手上，我们既发不出去也收不到回执，
+            // 唯一能做的是盯着它缓存的数字有没有变（变了才让界面重算）。
+            fingerprintPrinterCache(now);
+            return;
+        }
 
         if (pending) {
             if (now - sentAtTick <= RESPONSE_TIMEOUT_TICKS) {
@@ -314,12 +396,11 @@ public final class WarehouseStock {
         }
 
         List<String> ids;
-        synchronized (DEMAND) {
-            if (DEMAND.isEmpty()) {
+        synchronized (WATCHED) {
+            if (WATCHED.isEmpty()) {
                 return;
             }
-            ids = new ArrayList<>(DEMAND);
-            DEMAND.clear();
+            ids = new ArrayList<>(WATCHED);
         }
 
         lastRequestTick = now;
@@ -454,9 +535,7 @@ public final class WarehouseStock {
 
     private static void clear() {
         clearSnapshot();
-        synchronized (DEMAND) {
-            DEMAND.clear();
-        }
+        forgetDemand();
         lastDemandTick = Long.MIN_VALUE;
         lastRequestTick = Long.MIN_VALUE;
         rejectedUntilTick = Long.MIN_VALUE;

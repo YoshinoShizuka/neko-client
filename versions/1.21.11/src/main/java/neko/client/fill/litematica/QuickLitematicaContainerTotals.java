@@ -64,14 +64,15 @@ public final class QuickLitematicaContainerTotals {
      * 一次扫描的结果。
      *
      * @param rows        按数量从多到少排好的合计表
+     * @param names       参与合计的投影名字（按放置顺序），给标题用
      * @param placements  参与合计的投影个数
      * @param containers  真正带物品的容器个数
      * @param unreadable  有 {@code Items} 但整条读不出来的容器个数
      * @param truncated   是否撞上 {@link #MAX_BLOCK_ENTITIES} 提前收工
      */
-    public record Scan(List<Row> rows, int placements, int containers,
+    public record Scan(List<Row> rows, List<String> names, int placements, int containers,
                        int unreadable, boolean truncated) {
-        public static final Scan EMPTY = new Scan(List.of(), 0, 0, 0, false);
+        public static final Scan EMPTY = new Scan(List.of(), List.of(), 0, 0, 0, false);
 
         public boolean isEmpty() {
             return this.rows.isEmpty();
@@ -174,7 +175,29 @@ public final class QuickLitematicaContainerTotals {
             }
         }
 
-        return new Scan(toRows(counts, samples), placements.size(), containers, unreadable, truncated);
+        return new Scan(toRows(counts, samples), namesOf(placements), placements.size(),
+                containers, unreadable, truncated);
+    }
+
+    /**
+     * 纯逻辑：投影 → 名字列表（标题要用）。
+     *
+     * <p>用 {@code SchematicPlacement#getName()} 而不是 schematic 的元数据名字：
+     * 玩家在投影列表里看到的就是它（同一个原理图放两份时靠它区分）。</p>
+     */
+    static List<String> namesOf(List<SchematicPlacement> placements) {
+        List<String> names = new ArrayList<>();
+        if (placements == null) {
+            return names;
+        }
+        for (SchematicPlacement placement : placements) {
+            if (placement == null) {
+                continue;
+            }
+            String name = placement.getName();
+            names.add(name == null ? "" : name);
+        }
+        return names;
     }
 
     /**

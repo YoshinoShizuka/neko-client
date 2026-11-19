@@ -1,5 +1,6 @@
 package neko.client.fill.litematica;
 
+import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.gui.GuiMaterialList;
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
@@ -17,10 +18,13 @@ import java.util.List;
 /**
  * 「容器填充物合计」材料列表：整张原理图所有容器里要求的物品，对照<b>背包 + 虚空仓库</b>。
  *
- * <h2>这是一个真入口</h2>
- * <p>按热键（默认未绑定）随时打开，不需要先右键某个容器、也不需要先缺料。列表就是
- * Litematica 自己的材料列表界面（{@link GuiMaterialList}），所以「需要 / 已有 / 缺失」
- * 三列、倍数、只显示缺失、排序全都是现成的 —— 本类只负责把三列里的数字填对。</p>
+ * <h2>两个入口</h2>
+ * <p>主入口是 Litematica 材料列表工具栏上的「容器材料」按钮
+ * （{@code neko.client.mixin.GuiMaterialListButtonMixin}）；备用入口是
+ * {@code openContainerMaterials} 热键（默认未绑定）。都不需要先右键某个容器、
+ * 也不需要正在填充。列表就是 Litematica 自己的材料列表界面（{@link GuiMaterialList}），
+ * 所以「需要 / 已有 / 缺失」三列、倍数、只显示缺失、排序全都是现成的 ——
+ * 本类只负责把三列里的数字填对，外加把标题写成「原理图'名字'容器材料」。</p>
  *
  * <h2>三列各是什么</h2>
  * <ul>
@@ -38,14 +42,18 @@ import java.util.List;
 public final class ContainerFillMaterialList extends MaterialListBase {
 
     private static final String NAME_KEY = "neko_client.materials.name";
-    private static final String TITLE_KEY = "neko_client.materials.title";
 
     /** 当前打开的那份列表；界面关掉就清空（tick 里判断 screen 是否还是它）。 */
     private static ContainerFillMaterialList current;
+    /** 打开我们之前 DataManager 记着的材料列表；界面关掉时还回去。 */
+    private static MaterialListBase previousList;
+    private static boolean tookOverDataManager;
     private static boolean tickerReady;
 
     private long builtAtVersion;
     private QuickLitematicaContainerTotals.Scan lastScan = QuickLitematicaContainerTotals.Scan.EMPTY;
+    /** 标题形态（原理图名字 + 容器材料），扫描时定下来。 */
+    private ContainerTitle.Title title = ContainerTitle.of(List.of());
 
     public ContainerFillMaterialList() {
     }
@@ -59,7 +67,43 @@ public final class ContainerFillMaterialList extends MaterialListBase {
         ContainerFillMaterialList list = new ContainerFillMaterialList();
         list.reCreateMaterialList();
         current = list;
+        takeOverDataManager(list);
         QuickClientScreenAccess.setScreen(client, new GuiMaterialList(list));
+    }
+
+    /**
+     * 把自己登记成 Litematica 的「当前材料列表」。
+     *
+     * <p>🔴 不登记就等于数字全是别人的。{@code GuiMaterialList} 的构造器只在
+     * {@code DataManager.getMaterialList() == null} 时才登记；玩家先前看过原版材料列表之后，
+     * 那里永远停着<b>那一份</b>。而装了 litematica-printer 时，仓库数字正是它按
+     * 「当前材料列表里的物品」去服务端问来的 ⇒ 我们只能读到上一份清单的库存，
+     * 本表里不在那份清单中的物品一律是 0（真机实证：两边「白色染色玻璃」都是 998941，
+     * 而箭 / 紫颂花 / 铁桶 / 骨头 全 0 —— 它们不是方块材料）。</p>
+     *
+     * <p>登记之后 printer 会按<b>本表</b>的物品清单去问，本表才有正确数字；
+     * 关闭界面时必须还回去（{@link #releaseDataManager()}），否则它会把我们的清单
+     * 当成玩家的材料列表一直问下去。</p>
+     */
+    private static void takeOverDataManager(ContainerFillMaterialList list) {
+        if (tookOverDataManager) {
+            return;
+        }
+        tookOverDataManager = true;
+        previousList = DataManager.getMaterialList();
+        DataManager.setMaterialList(list);
+    }
+
+    /** 把「当前材料列表」还给打开本界面之前那一份（没有就还空）。 */
+    private static void releaseDataManager() {
+        if (!tookOverDataManager) {
+            return;
+        }
+        tookOverDataManager = false;
+        if (DataManager.getMaterialList() == current) {
+            DataManager.setMaterialList(previousList);
+        }
+        previousList = null;
     }
 
     /**
@@ -80,7 +124,7 @@ public final class ContainerFillMaterialList extends MaterialListBase {
 
     @Override
     public String getTitle() {
-        return StringUtils.translate(TITLE_KEY);
+        return StringUtils.translate(this.title.key(), this.title.args());
     }
 
     /** 重扫投影的容器 NBT，重建整张表（打开界面时调一次）。 */
@@ -98,9 +142,12 @@ public final class ContainerFillMaterialList extends MaterialListBase {
             entries.add(new ContainerEntry(row.stack(), row.count(), id));
         }
         this.lastScan = scan;
+        this.title = ContainerTitle.of(scan.names());
         this.builtAtVersion = WarehouseStock.snapshotVersion();
         this.setMaterialListEntries(entries);
         // 登记需求 ⇒ 仓库快照自己会去拉；回执到了 tick 里只重算「已有」。
+        // 先清旧的：换了一张投影之后，上一份清单的物品不该继续被问（也会让快照里留垃圾键）。
+        WarehouseStock.forgetDemand();
         WarehouseStock.noteDemand(ids);
     }
 
@@ -140,11 +187,35 @@ public final class ContainerFillMaterialList extends MaterialListBase {
         }
         if (!(QuickClientScreenAccess.currentScreen(client) instanceof GuiMaterialList gui)
                 || gui.getMaterialList() != list) {
+            releaseDataManager();
             current = null;
             return;
         }
         if (list.builtAtVersion != WarehouseStock.snapshotVersion()) {
             list.refreshAvailable();
+        }
+    }
+
+    /**
+     * 表头合计：按「需求 − 已有」现算。
+     *
+     * <p>🔴 不能沿用父类的「把每行 {@code getCountMissing()} 加起来」——
+     * 装了 litematica-printer 时那个值给的是 {@code total}（见
+     * {@link WarehouseStock#rowsRenderedByPrinter()}），照加会把表头算成「缺失 = 100%」。
+     * 这里直接按需求减已有，两种渲染路径都对得上。</p>
+     */
+    @Override
+    public void updateCounts() {
+        this.countTotal = 0;
+        this.countMissing = 0;
+        this.countMismatched = 0;
+        for (MaterialListEntry entry : this.getMaterialsAll()) {
+            if (entry == null) {
+                continue;
+            }
+            this.countTotal += entry.getCountTotal();
+            this.countMissing += ContainerGap.trueGap(entry.getCountTotal(), entry.getCountAvailable());
+            this.countMismatched += entry.getCountMismatched();
         }
     }
 
@@ -172,9 +243,22 @@ public final class ContainerFillMaterialList extends MaterialListBase {
             return sum > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) sum;
         }
 
+        /**
+         * 「缺失」列。
+         *
+         * <p>两种渲染路径要的值不一样（真机踩过）：</p>
+         * <ul>
+         *   <li><b>原版渲染</b>：直接画这个数 ⇒ 必须是「需求 − 已有」。</li>
+         *   <li><b>litematica-printer 渲染</b>：它把这个数当成「还没到位的量」，
+         *       自己再减一次已有 ⇒ 必须给 {@code total}，它减完才正好是「需求 − 已有」。
+         *       给「需求 − 已有」会变成 {@code total - 2 × available}，仓库只补到一半的行
+         *       会少报一半缺口。</li>
+         * </ul>
+         */
         @Override
         public int getCountMissing() {
-            return Math.max(0, this.getCountTotal() - this.getCountAvailable());
+            return ContainerGap.missingFor(this.getCountTotal(), this.getCountAvailable(),
+                    WarehouseStock.rowsRenderedByPrinter());
         }
     }
 
