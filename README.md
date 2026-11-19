@@ -1,6 +1,6 @@
 # Neko Client（虚空仓库客户端增强）
 
-纯客户端 Fabric mod，给「虚空仓库」的界面（一个 6 行原版大箱子）加四件事：
+纯客户端 Fabric mod，给「虚空仓库」的界面（一个 6 行原版大箱子）加五件事：
 
 1. **搜索框** —— 支持**中文 / 拼音全拼 / 拼音首字母 / 注册名**筛选物品。服务端 GUI 一个字节不变，纯原版玩家零感知。
 2. **取满手势** —— 按住组合键 + 点一格，取出到背包放不下为止。常规模式给**纯散货**，潜影盒模式给**满盒**；装多少由服务端按你的真实背包现算。
@@ -10,6 +10,7 @@
    顶部搜索框支持**中文 / 拼音 / 首字母 / 模糊拼音 / 注册名**，**匹配得最准的置顶**。逐条删除（点两次确认）。
    一份本子全服共用，删一条对所有人生效。
 4. **独立开关 + 可自定义热键** —— 两个功能各一套，由 **malilib**（MiniHUD / Litematica 那套）管，设置落 `config/neko-client.json`。
+5. **聊天静音开关**（0.5.2）—— 打开后，本客户端不再显示虚空仓库发来的**任何**聊天提示（含配方本那些不带前缀的续行）。只管显示，服务端照常发、别人照常看。
 
 ![Side](https://img.shields.io/badge/side-%E7%BA%AF%E5%AE%A2%E6%88%B7%E7%AB%AF-informational) ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.x-2ea043)
 
@@ -51,8 +52,8 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.1.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.5.1.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.2.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.5.2.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -74,19 +75,29 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | --- | --- | --- |
 | `searchBox` | `true` | 界面里**不再创建**搜索框（不占地方、不吃按键、不发 `search_apply`），取满手势照常可用 |
 | `fillGesture` | `true` | 取满手势退回原版「取 1 个」，搜索框照常可用（组合键还绑着也不响应） |
+| `silenceChat`（0.5.2） | `false` | 打开后隐藏虚空仓库的全部聊天提示（见下节）；关掉后新消息立刻恢复 |
 
 | 热键（配置界面里的名字） | 默认键 | 说明 |
 | --- | --- | --- |
 | 搜索框 / `searchBox` | **未绑定** | 切搜索框；界面开着时立刻生效 |
 | 取满手势 / `fillGesture` | **未绑定** | 切取满手势；立刻生效 |
+| 静音聊天 / `silenceChat` | **未绑定** | 切聊天静音；立刻生效 |
 | 取满组合键 / `fillCombo` | `LEFT_CONTROL,LEFT_ALT,BUTTON_2` | **不是开关，是手势本身**：按住它再点格子。只认绑定的那个鼠标键，未绑定的键一律不触发 |
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面 |
 | 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增；0.5.0 起带图标/滚动/搜索；随地可用，不必开着仓库） |
 
 三条开关热键默认留空，是因为 `H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车。`fillCombo` 是唯一给默认值的例外 —— 它是**手势本身**，留空等于把「可配置化」做成功能删除。
 
+### 聊天静音（0.5.2）
+
+`silenceChat` 打开后，客户端在收到**系统聊天包**的那一刻丢掉虚空仓库的提示，判据是三条文本特征：中文 `[虚空仓库] `、英文 `[Void Warehouse] `、以及配方本续行开头 `└ `（这一种**不带前缀**，所以单独匹配）。三种都只认**开头**，玩家在普通聊天里引用一句虚空仓库的话不会被误杀。
+
+- 只影响**你看不看得见**：服务端照常发、别人照常看到、已经留在聊天栏里的历史消息也不会被清掉。
+- 不需要开仓库界面、不需要服务端配合；单独打开这个开关也不会发起任何握手。
+- 判据是纯文本类，单测直接覆盖三种前缀与「句中引用不许命中」的负向样本；落点在 `handleSystemChat` 的 HEAD，命中即取消。
+
 - **怎么绑**：从 **Mod Menu** 或任意 malilib 模组的配置界面右上角下拉框里选「Neko Client」，点热键按钮 → 按下新键（鼠标键也能绑：先点按钮进入「> … <」态，再按住修饰键点鼠标键；ESC 取消、Delete 清空）。
-- **配置界面分了页**（与 MiniHUD 同款）：**全部** / **通用**（两个功能开关）/ **快捷键**（取满组合键、打开配置界面）。`fillCombo` 放「快捷键」页，因为它是个纯热键、不是布尔开关。
+- **配置界面分了页**（与 MiniHUD 同款）：**全部** / **通用**（两个功能开关 + 聊天静音）/ **快捷键**（取满组合键、打开配置界面）。`fillCombo` 放「快捷键」页，因为它是个纯热键、不是布尔开关。
 - **配置文件**：`config/neko-client.json`（首次启动自动生成，带 `_readme` 注释；空串 = 未绑定）。
 - **生效时机**：界面里改 / 按热键 → 立刻 + 当场写回；手改 json → **退出重进一次世界**。
 - ⚠️ 两个开关**都关**时打开界面，界面里不会创建搜索框；此时用热键打开搜索框，需要关掉界面再开一次（框是在界面初始化时建的）。
@@ -131,7 +142,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 配置 20 + 组合键 18 + 配方本 43（含拼音/模糊拼音 6 + 动态裕量 1）= 81 条
+.\gradlew.bat :modern:26.3:test        REM 配置 25 + 组合键 18 + 配方本 43 + 聊天静音 9 = 95 条
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -140,7 +151,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **1193 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **1288 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
@@ -149,7 +160,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 | 网络注册 | `serverboundPlay()` / `clientboundPlay()` | `playC2S()` / `playS2C()` |
 | 渲染注入 | `extractRenderState(GuiGraphicsExtractor,...)` | `render(GuiGraphics,int,int,float)` |
 
-两代容器屏都不渲染 renderables，搜索框都必须手动驱动。其余源码五版本逐字节相同（换行统一 CRLF）。
+两代容器屏都不渲染 renderables，搜索框都必须手动驱动。其余源码五版本逐字节相同（换行统一 CRLF）。0.5.2 的聊天静音 mixin 也是五版本同一份源码；`handleSystemChat` / `content()` 在 1.21.11 的产物里被 remap 成中间名（`method_43596` / `comp_763`），断言按版本分支咬。
 
 ## 版本兼容
 
