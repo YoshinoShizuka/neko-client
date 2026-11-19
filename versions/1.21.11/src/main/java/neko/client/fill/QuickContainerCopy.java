@@ -59,7 +59,9 @@ import net.minecraft.world.phys.HitResult;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 
 /**
@@ -720,23 +722,29 @@ public final class QuickContainerCopy implements ClientModInitializer {
                 || !WarehouseTakeNetwork.isSupported()) {
             return false;
         }
-        List<String> ids = new ArrayList<>();
+        // 把「投影容器还差什么、各差多少」整理成 id → 数量：这是比对表的左半边。
+        // 右半边（仓库实际给了多少）要等回执，见 WarehouseFillSupply。
+        Map<String, Integer> needByItem = new LinkedHashMap<>();
         for (MissingDemand demand : demands) {
             if (demand.template().isEmpty()) {
                 continue;
             }
-            ids.add(BuiltInRegistries.ITEM.getKey(demand.template().getItem()).toString());
+            Identifier key = BuiltInRegistries.ITEM.getKey(demand.template().getItem());
+            if (key == null) {
+                continue;
+            }
+            needByItem.merge(key.toString(), demand.count(), Integer::sum);
         }
-        if (ids.isEmpty()) {
+        if (needByItem.isEmpty()) {
             return false;
         }
         WarehouseSupplyState state = new WarehouseSupplyState(
                 continuous, target, type, template, success, useQuickShulker, rounds);
         warehouseSupply = state;
         warehouseSupplyStartedAt = System.currentTimeMillis();
-        boolean started = WarehouseFillSupply.begin(client, ids, delivered -> {
+        boolean started = WarehouseFillSupply.begin(client, needByItem, report -> {
             state.resolved = true;
-            state.delivered = delivered;
+            state.report = report;
         });
         if (!started) {
             warehouseSupply = null;
@@ -752,14 +760,16 @@ public final class QuickContainerCopy implements ClientModInitializer {
         if (state == null || client == null || client.player == null) {
             return;
         }
-        if (!state.delivered) {
+        if (!anyDelivered(state.report)) {
+            // 一件都没补到：把「要什么、要多少」说清楚，而不是只丢一句「仓库空了」
+            Component message = withShortageReport(
+                    Component.translatable("neko_client.fill.message.container_copy.warehouse_empty"),
+                    state.report);
             if (state.continuous && continuousTask != null) {
                 QuickContainerFillStatus.finish(client, state.target, 1);
-                stopContinuousTask(client, true, Component.translatable(
-                        "neko_client.fill.message.container_copy.warehouse_empty"));
+                stopContinuousTask(client, true, message);
             } else {
-                sendStatusMessage(client, Component.translatable(
-                        "neko_client.fill.message.container_copy.warehouse_empty"));
+                sendStatusMessage(client, message);
             }
             return;
         }
@@ -805,11 +815,78 @@ public final class QuickContainerCopy implements ClientModInitializer {
             return;
         }
         QuickContainerFillStatus.finish(client, state.target, result.issueCount());
+        // 仓库补过一轮还是缺：把「仓库给了多少 / 还差多少」直接附在缺料提示后面
+        Component message = withShortageReport(result.message(state.success), state.report);
         if (state.continuous && continuousTask != null) {
-            stopContinuousTask(client, true, result.message(state.success));
+            stopContinuousTask(client, true, message);
         } else {
-            sendStatusMessage(client, result.message(state.success));
+            sendStatusMessage(client, message);
         }
+    }
+
+    /** 这一轮补料有没有真的拿到东西 */
+    private static boolean anyDelivered(List<WarehouseFillPlan.Delivery> report) {
+        if (report == null) {
+            return false;
+        }
+        for (WarehouseFillPlan.Delivery delivery : report) {
+            if (delivery.got() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 把「投影容器里要多少」与「仓库实际给了多少」的差额拼成一行说明。
+     *
+     * <p>这就是这条链路上真正的<b>库存比对</b>：左边是容器 NBT 算出来的缺口
+     * （{@code MissingDemand}），右边是 {@code printer_take} 回执结算后的背包增量。
+     * 没有这一行时，玩家看到的只有「缺料」，分不清是仓库没有、仓库只给了一部分，
+     * 还是背包放不下。</p>
+     *
+     * @return {@code null} = 没有可说的差额（全补齐了，或需求数量未知）
+     */
+    private static Component shortageReport(List<WarehouseFillPlan.Delivery> report) {
+        if (report == null || report.isEmpty()) {
+            return null;
+        }
+        List<Component> lines = new ArrayList<>();
+        for (WarehouseFillPlan.Delivery delivery : report) {
+            if (delivery.need() <= 0 || delivery.shortage() <= 0) {
+                continue;
+            }
+            Component name = WarehouseText.key(nameOf(delivery.itemId()));
+            if (delivery.nothing()) {
+                lines.add(Component.translatable(
+                        "neko_client.fill.message.container_copy.warehouse_missing_item",
+                        name, delivery.need()));
+            } else {
+                lines.add(Component.translatable(
+                        "neko_client.fill.message.container_copy.warehouse_partial_item",
+                        name, delivery.got(), delivery.shortage()));
+            }
+        }
+        return lines.isEmpty() ? null : joinTexts(lines);
+    }
+
+    /** 把差额说明接在一条已有提示后面；没有差额就原样返回 */
+    private static Component withShortageReport(Component base,
+                                                List<WarehouseFillPlan.Delivery> report) {
+        Component detail = shortageReport(report);
+        if (detail == null) {
+            return base;
+        }
+        return base.copy().append(Component.literal("\n")).append(detail);
+    }
+
+    /** 物品 id → 可读名字；解析不出来就退回 id 本身（绝不留空） */
+    private static Component nameOf(String itemId) {
+        Identifier key = itemId == null ? null : Identifier.tryParse(itemId);
+        if (key == null || !BuiltInRegistries.ITEM.containsKey(key)) {
+            return Component.literal(itemId == null ? "?" : itemId);
+        }
+        return new ItemStack(BuiltInRegistries.ITEM.getValue(key)).getHoverName();
     }
 
     public static boolean shouldHideBackgroundHandledScreen() {
@@ -2719,7 +2796,8 @@ public final class QuickContainerCopy implements ClientModInitializer {
         private final boolean useQuickShulker;
         private final int rounds;
         private boolean resolved;
-        private boolean delivered;
+        /** 本次补料的「要多少 / 到手多少」，见 {@link WarehouseFillPlan#deliveries()} */
+        private List<WarehouseFillPlan.Delivery> report = List.of();
 
         private WarehouseSupplyState(boolean continuous, HitResult target, SupportedContainerType type,
                                      RecordedContainerTemplate template, SuccessMessage success,

@@ -16,8 +16,7 @@
     ]
   },
   "mixins": [
-    "neko_client.mixins.json",
-    "neko_client_litematica.mixins.json"
+    "neko_client.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.19.3",

@@ -101,10 +101,6 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         // 全在 WarehouseTakeNetwork 里，入口只把两个版本的 registry 递进去。
         WarehouseTakeNetwork.init(c2s, s2c);
 
-        // 材料来源计入虚空仓库（0.5.5）：只服务 Litematica 原生材料列表，
-        // 由「有没有人在看材料列表」驱动查询；开关关着时不注册接收器之外不发任何包。
-        VoidWarehouseMaterialSource.init(c2s, s2c);
-
         // 投影容器填充（0.5.4）：两个 tick 监听器自己按 projectionFill 开关门禁，
         // 未安装 litematica 时 getTemplateSnapshot 恒 null（不会崩）。
         // 与 quickcraft 同时安装时只提醒可能双份响应右键，绝不替玩家关掉自己的开关
@@ -148,12 +144,11 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
             // 取满组合键一起打出来：「取满没反应」时先看这一行，能立刻分辨
             // 「组合键没读到」「组合键读到了但绑的东西用不了」「绑对了但没按对」三件事。
             // 0.4.3 就是缺了第三段，只能靠猜 —— 这一行不许再删。
-            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={} 取满组合键={}（判定：{}）材料来源={}",
+            LOGGER.info("[虚空仓库搜索] 配置：搜索框={} 取满手势={} 取满组合键={}（判定：{}）",
                     SearchConfig.isSearchBoxEnabled() ? "开" : "关",
                     SearchConfig.isFillGestureEnabled() ? "开" : "关",
                     SearchConfig.fillComboDisplay(),
-                    SearchConfig.fillComboStatus(),
-                    VoidWarehouseMaterialSource.status());
+                    SearchConfig.fillComboStatus());
         });
 
         // 🔴 先自检，后说话：不再无条件「已就绪」。四条里只要有一条不归本模组，

@@ -56,8 +56,8 @@ public final class WarehouseTakeNetwork {
     /** 撞 THROTTLED 时的重试次数（最多 2 次，避免无限退避） */
     private static volatile int retries = 0;
     private static volatile boolean initialized = false;
-    /** 谁在等这次回执：手持热键为 null；投影填充的补料链会传自己的回调 */
-    private static volatile Consumer<Boolean> completion = null;
+    /** 谁在等这次回执：手持热键为 null；投影填充的补料链会传自己的回调（参数 = 到手件数） */
+    private static volatile Consumer<Integer> completion = null;
     /** 填充补料是后台行为，不抢玩家的动作栏（失败由填充链路自己报） */
     private static volatile boolean silentRequest = false;
 
@@ -125,6 +125,19 @@ public final class WarehouseTakeNetwork {
      */
     public static boolean beginForItem(Minecraft client, ItemStack sample,
                                        boolean silent, Consumer<Boolean> onResult) {
+        return beginForItemCount(client, sample, silent,
+                onResult == null ? null : count -> onResult.accept(count > 0));
+    }
+
+    /**
+     * 同上，但回调给的是<b>这次真正进背包的件数</b>。
+     *
+     * <p>容器填充需要这个数字：投影容器里要求 64 个、仓库只给到 20 个，
+     * 差别就是「仓库不够」的证据 —— 只给 boolean 的话只能知道「没补齐」，
+     * 说不出缺多少。</p>
+     */
+    public static boolean beginForItemCount(Minecraft client, ItemStack sample,
+                                            boolean silent, Consumer<Integer> onResult) {
         if (client == null || client.player == null || sample == null || sample.isEmpty()) {
             return false;
         }
@@ -165,9 +178,9 @@ public final class WarehouseTakeNetwork {
         return true;
     }
 
-    private static void finishRequest(Consumer<Boolean> callback, boolean result) {
+    private static void finishRequest(Consumer<Integer> callback, int deliveredCount) {
         if (callback != null) {
-            callback.accept(result);
+            callback.accept(deliveredCount);
         }
     }
 
@@ -191,9 +204,9 @@ public final class WarehouseTakeNetwork {
                     InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_no_reply");
                 }
                 LOGGER.warn("[虚空仓库补货] nonce={} 超时无回执（{}）", nonce, activeItemId);
-                Consumer<Boolean> callback = completion;
+                Consumer<Integer> callback = completion;
                 forget();
-                finishRequest(callback, false);
+                finishRequest(callback, 0);
             }
             return;
         }
@@ -202,10 +215,10 @@ public final class WarehouseTakeNetwork {
             resend(client, nonce);
             return;
         }
-        // 成功判据取交集：服务端 OK + 背包真的变多
-        boolean delivered = WarehouseTakeModel.delivered(status, heldBefore,
+        // 成功判据取交集：服务端 OK + 背包真的变多；同时把「到手多少件」算出来交给调用方
+        int deliveredCount = WarehouseTakeModel.deliveredCount(status, heldBefore,
                 countInInventory(client, stackOf(activeItemId)));
-        if (!delivered && !silentRequest) {
+        if (deliveredCount <= 0 && !silentRequest) {
             String key = WarehouseTakeModel.hintKey(status);
             if (key != null) {
                 InfoUtils.printActionbarMessage(key);
@@ -215,9 +228,9 @@ public final class WarehouseTakeNetwork {
             }
         }
         // 🔴 先清空本次状态再回调：回调里常常立刻发下一个补料请求
-        Consumer<Boolean> callback = completion;
+        Consumer<Integer> callback = completion;
         forget();
-        finishRequest(callback, delivered);
+        finishRequest(callback, deliveredCount);
     }
 
     /** 撞限流后退避重发（same nonce，回执配对不变） */

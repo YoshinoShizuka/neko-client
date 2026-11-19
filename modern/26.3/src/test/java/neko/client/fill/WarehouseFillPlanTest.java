@@ -4,7 +4,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -72,4 +74,44 @@ class WarehouseFillPlanTest {
                 () -> assertNull(plan.next()),
                 () -> assertFalse(plan.anyDelivered()));
     }
+
+    @Test
+    @DisplayName("D1 🔴 需求与实得比对：够 / 只给一部分 / 一件没给，三种都要说得出差多少")
+    void comparesNeedsAgainstDelivered() {
+        Map<String, Integer> need = new LinkedHashMap<>();
+        need.put("minecraft:stone", 64);
+        need.put("minecraft:dirt", 32);
+        need.put("minecraft:sand", 16);
+        WarehouseFillPlan counting = new WarehouseFillPlan(need);
+        String stone = counting.next();
+        counting.record(64);
+        String dirt = counting.next();
+        counting.record(20);
+        String sand = counting.next();
+        counting.record(0);
+        assertAll(
+                () -> assertEquals(3, counting.deliveries().size()),
+                () -> assertEquals(0, counting.deliveries().get(0).shortage(), "石头补齐了"),
+                () -> assertEquals(20, counting.deliveries().get(1).got()),
+                () -> assertEquals(12, counting.deliveries().get(1).shortage(), "泥土仓库只给到 20"),
+                () -> assertTrue(counting.deliveries().get(2).nothing(), "沙子仓库一件都没有"),
+                () -> assertEquals(16, counting.deliveries().get(2).shortage()),
+                () -> assertEquals(2, counting.delivered(), "到货的种类数"),
+                () -> assertEquals(stone, counting.deliveries().get(0).itemId()),
+                () -> assertEquals(dirt, counting.deliveries().get(1).itemId()),
+                () -> assertEquals(sand, counting.deliveries().get(2).itemId()));
+    }
+
+    @Test
+    @DisplayName("D2 只有 id 没有数量时（手持补货场景）不参与缺口比对")
+    void withoutNeedsHasNoShortage() {
+        WarehouseFillPlan plan = new WarehouseFillPlan(List.of("minecraft:stone"));
+        plan.next();
+        plan.record(10);
+        assertAll(
+                () -> assertEquals(0, plan.deliveries().get(0).need()),
+                () -> assertEquals(0, plan.deliveries().get(0).shortage(), "需求未知时不许报缺口"),
+                () -> assertTrue(plan.anyDelivered()));
+    }
+
 }

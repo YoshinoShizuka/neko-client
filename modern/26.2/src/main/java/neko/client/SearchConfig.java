@@ -103,15 +103,6 @@ public final class SearchConfig implements IConfigHandler {
             "projectionFill", SearchConfigJson.DEFAULT_PROJECTION_FILL,
             "", HOTKEY_SETTINGS).apply(PREFIX);
 
-    /**
-     * 材料来源计入虚空仓库（0.5.5）：Litematica 材料列表的「已有」= 背包 + 仓库。
-     *
-     * <p>默认 false：这是只读统计，但会给服务端增加每 5 秒一次的查询；升级后
-     * 老玩家不应在不知情的情况下开始发包。开关关着时现有统计一个字节都不变。</p>
-     */
-    public static final ConfigBooleanHotkeyed USE_VOID_WAREHOUSE_MATERIALS = new ConfigBooleanHotkeyed(
-            "useVoidWarehouseMaterials", SearchConfigJson.DEFAULT_USE_VOID_WAREHOUSE_MATERIALS,
-            "", HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
      * 取满手势的<b>组合键</b>（0.4.7 起默认 Ctrl + Alt + 右键；只影响新生成的配置，
@@ -161,7 +152,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
-                    USE_VOID_WAREHOUSE_MATERIALS, FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
+                    FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -170,8 +161,7 @@ public final class SearchConfig implements IConfigHandler {
      * 也就是说<b>开关的热键本来就摆在这一行</b>，不需要在「快捷键」页再列一遍。</p>
      */
     public static final List<IHotkey> GUI_FEATURES =
-            List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
-                    USE_VOID_WAREHOUSE_MATERIALS);
+            List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL);
 
     /**
      * 配置界面「快捷键」页：纯热键条目（不带开关的）。
@@ -196,7 +186,6 @@ public final class SearchConfig implements IConfigHandler {
         FILL_GESTURE.setPrettyName(PREFIX + ".prettyName.fillGesture");
         SILENCE_CHAT.setPrettyName(PREFIX + ".prettyName.silenceChat");
         PROJECTION_FILL.setPrettyName(PREFIX + ".prettyName.projectionFill");
-        USE_VOID_WAREHOUSE_MATERIALS.setPrettyName(PREFIX + ".prettyName.useVoidWarehouseMaterials");
     }
 
     /** 给 malilib 的 {@code ConfigManager} 用（它会自己 new 一个；本类只有静态状态） */
@@ -235,7 +224,6 @@ public final class SearchConfig implements IConfigHandler {
             FILL_GESTURE.setBooleanHotkeyValue(Pair.of(values.fillGesture(), values.keyFillGesture()));
             SILENCE_CHAT.setBooleanValue(values.silenceChat());
             PROJECTION_FILL.setBooleanValue(values.projectionFill());
-            USE_VOID_WAREHOUSE_MATERIALS.setBooleanValue(values.useVoidWarehouseMaterials());
             FILL_COMBO.setHotkeyStringValue(values.keyFillCombo());
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
@@ -256,8 +244,7 @@ public final class SearchConfig implements IConfigHandler {
                 box.getRight(), fill.getRight(),
                 FILL_COMBO.getHotkeyStringValue(),
                 OPEN_GUI.getHotkeyStringValue(),
-                OPEN_RECIPES.getHotkeyStringValue(),
-                USE_VOID_WAREHOUSE_MATERIALS.getBooleanValue()));
+                OPEN_RECIPES.getHotkeyStringValue()));
 
         Path path = file();
         try {
@@ -304,11 +291,6 @@ public final class SearchConfig implements IConfigHandler {
     /** 投影容器填充是否启用（默认 false） */
     public static boolean isProjectionFillEnabled() {
         return PROJECTION_FILL.getBooleanValue();
-    }
-
-    /** 材料列表「已有数量」是否计入虚空仓库（默认 false） */
-    public static boolean isUseVoidWarehouseMaterialsEnabled() {
-        return USE_VOID_WAREHOUSE_MATERIALS.getBooleanValue();
     }
 
     /**

@@ -30,7 +30,24 @@ public final class WarehouseTakeModel {
      * @param heldAfter  回执到达后背包里该物品的件数
      */
     public static boolean delivered(int status, int heldBefore, int heldAfter) {
-        return status == STATUS_OK && heldAfter > heldBefore;
+        return deliveredCount(status, heldBefore, heldAfter) > 0;
+    }
+
+    /**
+     * 这次到底<b>到手多少件</b>（0 = 一件没进背包）。
+     *
+     * <p>容器填充要拿它跟「投影容器里要求的数量」比 —— 服务端一次只给仓库能给的全部，
+     * 背包放不下就少给，所以「到手件数 &lt; 需求件数」正是「仓库（或背包）不够」的证据。</p>
+     *
+     * <p>只在 {@code OK} 时才算数：其它状态下服务端保证没往背包里放东西
+     * （{@code INVENTORY_FULL} 连仓库都不扣），此时哪怕背包数字变了也是别的原因
+     * （玩家自己捡到、另一个模组塞的），不能记成「仓库给的」。</p>
+     */
+    public static int deliveredCount(int status, int heldBefore, int heldAfter) {
+        if (status != STATUS_OK) {
+            return 0;
+        }
+        return Math.max(0, heldAfter - heldBefore);
     }
 
     /**

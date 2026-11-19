@@ -42,6 +42,18 @@ class WarehouseTakeModelTest {
     }
 
     @Test
+    @DisplayName("A4 deliveredCount 给出「这次到手几件」：0 / 部分 / 溢出边界")
+    void deliveredCountReportsGain() {
+        assertAll(
+                () -> assertEquals(64, WarehouseTakeModel.deliveredCount(0, 0, 64)),
+                () -> assertEquals(20, WarehouseTakeModel.deliveredCount(0, 4, 24)),
+                () -> assertEquals(0, WarehouseTakeModel.deliveredCount(0, 5, 5), "OK 但没动"),
+                () -> assertEquals(0, WarehouseTakeModel.deliveredCount(0, 9, 2), "变少不算负数"),
+                () -> assertEquals(0, WarehouseTakeModel.deliveredCount(2, 0, 64), "EMPTY 时背包变多与仓库无关"),
+                () -> assertEquals(0, WarehouseTakeModel.deliveredCount(3, 0, 64), "INVENTORY_FULL 不许记成到手"));
+    }
+
+    @Test
     @DisplayName("B1 只有 THROTTLED 才重试，其它失败态不重试")
     void retryOnlyThrottled() {
         assertAll(

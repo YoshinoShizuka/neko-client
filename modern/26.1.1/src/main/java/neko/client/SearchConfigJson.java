@@ -44,8 +44,6 @@ final class SearchConfigJson {
     static final boolean DEFAULT_SILENCE_CHAT = false;
     /** 投影容器填充默认关：它是新功能，不能让升级后的老玩家突然改右键行为。 */
     static final boolean DEFAULT_PROJECTION_FILL = false;
-    /** 材料来源计入虚空仓库默认关：只读统计，但会给服务端增加查询流量。 */
-    static final boolean DEFAULT_USE_VOID_WAREHOUSE_MATERIALS = false;
     static final String DEFAULT_KEY_SEARCH_BOX = "";
     static final String DEFAULT_KEY_FILL_GESTURE = "";
     static final String DEFAULT_KEY_OPEN_GUI = "";
@@ -97,24 +95,13 @@ final class SearchConfigJson {
                   String keyFillGesture,
                   String keyFillCombo,
                   String keyOpenGui,
-                  String keyOpenRecipes,
-                  boolean useVoidWarehouseMaterials) {
-
-        /** 兼容旧调用点：新增开关缺省为 false，不让无关单测全部改写。 */
-        Values(boolean searchBox, boolean fillGesture, boolean silenceChat, boolean projectionFill,
-               String keySearchBox, String keyFillGesture, String keyFillCombo,
-               String keyOpenGui, String keyOpenRecipes) {
-            this(searchBox, fillGesture, silenceChat, projectionFill,
-                    keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui, keyOpenRecipes,
-                    DEFAULT_USE_VOID_WAREHOUSE_MATERIALS);
-        }
+                  String keyOpenRecipes) {
 
         static Values defaults() {
             return new Values(DEFAULT_SEARCH_BOX, DEFAULT_FILL_GESTURE, DEFAULT_SILENCE_CHAT,
                     DEFAULT_PROJECTION_FILL,
                     DEFAULT_KEY_SEARCH_BOX, DEFAULT_KEY_FILL_GESTURE,
-                    DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES,
-                    DEFAULT_USE_VOID_WAREHOUSE_MATERIALS);
+                    DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES);
         }
 
         /**
@@ -149,8 +136,7 @@ final class SearchConfigJson {
                 readKey(json, "keyFillGesture", DEFAULT_KEY_FILL_GESTURE),
                 readKeyKeepingEmpty(json, "keyFillCombo", DEFAULT_KEY_FILL_COMBO),
                 readKey(json, "keyOpenGui", DEFAULT_KEY_OPEN_GUI),
-                readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES),
-                readBoolean(json, "useVoidWarehouseMaterials", DEFAULT_USE_VOID_WAREHOUSE_MATERIALS));
+                readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES));
     }
 
     /**
@@ -166,12 +152,10 @@ final class SearchConfigJson {
                   "_readme_fillCombo": "keyFillCombo 是「取满手势」的组合键，必须恰好包含一个鼠标键：BUTTON_1 = 左键、BUTTON_2 = 右键、BUTTON_3 = 中键（26.3 也可写 MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE）。0.4.7 起默认 LEFT_CONTROL,LEFT_ALT,BUTTON_2 = Ctrl+Alt+右键；想用左键就把它改成 BUTTON_1。判据严格匹配：绑右键时左键不会触发，反之亦然。只对前 5 行内容格生效（第 6 行是导航行，玩家背包/快捷栏不算）。写成空字符串 = 清空 = 关掉这个手势（开关开着也不响应）。",
                   "_readme_silenceChat": "silenceChat = true 时，客户端直接丢弃虚空仓库发来的聊天提示（中文前缀 [虚空仓库]、英文前缀 [Void Warehouse]、配方本不带前缀的 └ 续行）。只影响这一台客户端的显示，不改动服务端行为，也清不掉已经显示过的历史消息。默认 false。",
                   "_readme_projectionFill": "projectionFill = true 时开启投影容器填充：右键投影里的容器，打开后按投影内容逐格填充；缺料会自动向虚空仓库取货。默认 false（新功能，不抢右键）。需要服务端 carpet-Neko-Addition 1.0.17+ 且打开 voidWarehouse / voidWarehouseRestock。",
-                  "_readme_useVoidWarehouseMaterials": "useVoidWarehouseMaterials = true 时，Litematica 材料列表的「已有数量」= 背包（含嵌套潜影盒）+ 虚空仓库库存。只读统计：不会改动仓库、也不会把材料取到手上，所以「缺失数量」仍按实际手上的缺口计算。需要服务端 carpet-Neko-Addition 1.0.17+ 且打开 voidWarehouse / voidWarehouseRestock；任一条件不满足时按 0 处理。与 litematica-printer 同装时复用它已同步的缓存，不重复发包。默认 false。",
                   "searchBox": %s,
                   "fillGesture": %s,
                   "silenceChat": %s,
                   "projectionFill": %s,
-                  "useVoidWarehouseMaterials": %s,
                   "keySearchBox": "%s",
                   "keyFillGesture": "%s",
                   "keyFillCombo": "%s",
@@ -179,7 +163,7 @@ final class SearchConfigJson {
                   "keyOpenRecipes": "%s"
                 }
                 """.formatted(values.searchBox(), values.fillGesture(), values.silenceChat(),
-                values.projectionFill(), values.useVoidWarehouseMaterials(),
+                values.projectionFill(),
                 values.keySearchBox(), values.keyFillGesture(), values.keyFillCombo(),
                 values.keyOpenGui(), values.keyOpenRecipes());
     }
