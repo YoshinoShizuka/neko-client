@@ -69,5 +69,17 @@
   "neko_client.config.prettyName.searchBox": "搜索框",
   "neko_client.config.prettyName.fillGesture": "取满手势",
   "neko_client.config.prettyName.silenceChat": "聊天静音",
-  "neko_client.config.prettyName.projectionFill": "投影容器填充"
+  "neko_client.config.prettyName.projectionFill": "投影容器填充",
+  "neko_client.fill.container_type.hopper": "漏斗",
+  "neko_client.fill.container_type.small_chest": "箱子",
+  "neko_client.fill.container_type.large_chest": "大箱子",
+  "neko_client.fill.container_type.barrel": "木桶",
+  "neko_client.fill.container_type.shulker_box": "潜影盒",
+  "neko_client.fill.container_type.dispenser": "发射器",
+  "neko_client.fill.container_type.dropper": "投掷器",
+  "neko_client.fill.container_type.crafter": "合成器",
+  "neko_client.fill.container_type.furnace": "熔炉",
+  "neko_client.fill.container_type.blast_furnace": "高炉",
+  "neko_client.fill.container_type.smoker": "烟熏炉",
+  "neko_client.fill.container_type.brewing_stand": "酿造台"
 }

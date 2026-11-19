@@ -2803,20 +2803,25 @@ public final class QuickContainerCopy implements ClientModInitializer {
 
     /**
      * 类型按“实际容器种类”区分，避免不同槽位数的容器误套模板。
+     *
+     * <p>🔴 显示名一律用本模组的命名空间：vendor 过来的 quickcraft 原代码写的是
+     * {@code quickcraft.container_type.*}，而本 jar 不带 quickcraft 的语言文件，
+     * 真机提示就成了「已自动填充投影quickcraft.container_type.hopper内容」。
+     * 容器名出现在「记录 / 复制 / 自动填充 / 后台开始」四条提示里，必须一起修。</p>
      */
     private enum SupportedContainerType {
-        HOPPER(PublicContainerType.HOPPER, "quickcraft.container_type.hopper"),
-        SMALL_CHEST(PublicContainerType.SMALL_CHEST, "quickcraft.container_type.small_chest"),
-        LARGE_CHEST(PublicContainerType.LARGE_CHEST, "quickcraft.container_type.large_chest"),
-        BARREL(PublicContainerType.BARREL, "quickcraft.container_type.barrel"),
-        SHULKER_BOX(PublicContainerType.SHULKER_BOX, "quickcraft.container_type.shulker_box"),
-        DISPENSER(PublicContainerType.DISPENSER, "quickcraft.container_type.dispenser"),
-        DROPPER(PublicContainerType.DROPPER, "quickcraft.container_type.dropper"),
-        CRAFTER(PublicContainerType.CRAFTER, "quickcraft.container_type.crafter"),
-        FURNACE(PublicContainerType.FURNACE, "quickcraft.container_type.furnace"),
-        BLAST_FURNACE(PublicContainerType.BLAST_FURNACE, "quickcraft.container_type.blast_furnace"),
-        SMOKER(PublicContainerType.SMOKER, "quickcraft.container_type.smoker"),
-        BREWING_STAND(PublicContainerType.BREWING_STAND, "quickcraft.container_type.brewing_stand");
+        HOPPER(PublicContainerType.HOPPER, "neko_client.fill.container_type.hopper"),
+        SMALL_CHEST(PublicContainerType.SMALL_CHEST, "neko_client.fill.container_type.small_chest"),
+        LARGE_CHEST(PublicContainerType.LARGE_CHEST, "neko_client.fill.container_type.large_chest"),
+        BARREL(PublicContainerType.BARREL, "neko_client.fill.container_type.barrel"),
+        SHULKER_BOX(PublicContainerType.SHULKER_BOX, "neko_client.fill.container_type.shulker_box"),
+        DISPENSER(PublicContainerType.DISPENSER, "neko_client.fill.container_type.dispenser"),
+        DROPPER(PublicContainerType.DROPPER, "neko_client.fill.container_type.dropper"),
+        CRAFTER(PublicContainerType.CRAFTER, "neko_client.fill.container_type.crafter"),
+        FURNACE(PublicContainerType.FURNACE, "neko_client.fill.container_type.furnace"),
+        BLAST_FURNACE(PublicContainerType.BLAST_FURNACE, "neko_client.fill.container_type.blast_furnace"),
+        SMOKER(PublicContainerType.SMOKER, "neko_client.fill.container_type.smoker"),
+        BREWING_STAND(PublicContainerType.BREWING_STAND, "neko_client.fill.container_type.brewing_stand");
 
         private final PublicContainerType publicType;
         private final String displayNameKey;

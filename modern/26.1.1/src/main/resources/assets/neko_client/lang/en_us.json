@@ -69,5 +69,17 @@
   "neko_client.config.prettyName.searchBox": "Search box",
   "neko_client.config.prettyName.fillGesture": "Fill gesture",
   "neko_client.config.prettyName.silenceChat": "Silence chat",
-  "neko_client.config.prettyName.projectionFill": "Projection container fill"
+  "neko_client.config.prettyName.projectionFill": "Projection container fill",
+  "neko_client.fill.container_type.hopper": "hopper",
+  "neko_client.fill.container_type.small_chest": "chest",
+  "neko_client.fill.container_type.large_chest": "large chest",
+  "neko_client.fill.container_type.barrel": "barrel",
+  "neko_client.fill.container_type.shulker_box": "shulker box",
+  "neko_client.fill.container_type.dispenser": "dispenser",
+  "neko_client.fill.container_type.dropper": "dropper",
+  "neko_client.fill.container_type.crafter": "crafter",
+  "neko_client.fill.container_type.furnace": "furnace",
+  "neko_client.fill.container_type.blast_furnace": "blast furnace",
+  "neko_client.fill.container_type.smoker": "smoker",
+  "neko_client.fill.container_type.brewing_stand": "brewing stand"
 }
