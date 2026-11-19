@@ -384,6 +384,41 @@ class SearchConfigJsonTest {
                 () -> assertTrue(text.contains("\"projectionFill\": true")));
     }
 
+    // ------------------------------------------ 0.5.5：材料来源计入虚空仓库
+
+    @Test
+    @DisplayName("H3 🔴 useVoidWarehouseMaterials 默认 false；老配置缺字段不许静默打开")
+    void voidWarehouseMaterialsDefaultsOff() {
+        String text = SearchConfigJson.render(SearchConfigJson.Values.defaults());
+        assertAll(
+                () -> assertFalse(SearchConfigJson.Values.defaults().useVoidWarehouseMaterials()),
+                () -> assertFalse(SearchConfigJson.parse("{}").useVoidWarehouseMaterials()),
+                () -> assertTrue(text.contains("\"_readme_useVoidWarehouseMaterials\""),
+                        "手改配置的人必须看得到这个只在只读统计里生效的开关"),
+                () -> assertTrue(text.contains("\"useVoidWarehouseMaterials\": false"),
+                        "默认值必须真的落盘"));
+    }
+
+    @Test
+    @DisplayName("H4 useVoidWarehouseMaterials 能穿过 render→parse，且与 projectionFill 互不串位")
+    void voidWarehouseMaterialsRoundTripsIndependently() {
+        for (boolean materialSource : new boolean[]{true, false}) {
+            SearchConfigJson.Values written = new SearchConfigJson.Values(
+                    true, true, false, false,
+                    SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
+                    SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
+                    SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
+                    SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
+                    SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
+                    materialSource);
+            SearchConfigJson.Values readBack = SearchConfigJson.parse(SearchConfigJson.render(written));
+            assertAll(
+                    () -> assertEquals(written, readBack),
+                    () -> assertEquals(materialSource, readBack.useVoidWarehouseMaterials()),
+                    () -> assertFalse(readBack.projectionFill(), "材料来源不能把投影填充开关带开"));
+        }
+    }
+
     // ------------------------------------------------------------ 小工具
 
     private static SearchConfigJson.Values values(boolean searchBox, boolean fillGesture) {

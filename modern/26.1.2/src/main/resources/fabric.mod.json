@@ -17,6 +17,7 @@
   },
   "mixins": [
     "neko_client.mixins.json",
+    "neko_client_litematica.mixins.json",
     "neko_client_fill.mixins.json"
   ],
   "depends": {
