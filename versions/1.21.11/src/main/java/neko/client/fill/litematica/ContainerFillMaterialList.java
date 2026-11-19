@@ -13,7 +13,9 @@ import neko.client.WarehouseStock;
 import neko.client.fill.QuickClientScreenAccess;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 「容器填充物合计」材料列表：整张原理图所有容器里要求的物品，对照<b>背包 + 虚空仓库</b>。
@@ -173,6 +175,7 @@ public final class ContainerFillMaterialList extends MaterialListBase {
     /** 重扫投影的容器 NBT，重建整张表（打开界面时调一次）。 */
     @Override
     public void reCreateMaterialList() {
+        rebuildInventoryCounts();
         if (this.scope.isEmpty()) {
             this.scope = ContainerScope.allEnabled();
         }
@@ -200,13 +203,26 @@ public final class ContainerFillMaterialList extends MaterialListBase {
     /**
      * 只重算「已有 / 缺失」，不重扫投影。
      *
-     * <p>每行的可用数量是渲染时现算的（{@link ContainerEntry#getCountAvailable()}），
-     * 所以这里只要把表头和过滤列表刷新一下。</p>
+     * <p>每行的可用数量是<b>渲染时现算</b>的（{@link ContainerEntry#getCountAvailable()}，
+     * 只查表），所以这里<b>不用</b>碰列表内容 —— 行会自己画出新数字。</p>
+     *
+     * <p>🔴 表头那行合计是 {@code GuiMaterialList.createCounts()} 在 {@code initGui()} 时
+     * 「烤」进去的（读的是字段值），不重建就一直是开界面那一刻的数字。而
+     * {@code onTaskCompleted()} 的实现就是 <b>{@code initGui()}</b> —— 整个控件树重建、
+     * 滚动条回到顶部。所以只在<b>数字真的变了</b>时重建，且 1 秒内最多一次：
+     * 否则仓库每 5 秒一刷，玩家正翻着列表就被拉回顶部，感觉整页都在卡。</p>
      */
     public void refreshAvailable() {
         this.builtAtVersion = WarehouseStock.snapshotVersion();
-        this.updateCounts();
-        this.refreshPreFilteredList();
+        if (!this.recountTotals()) {
+            return;
+        }
+        Minecraft client = Minecraft.getInstance();
+        long now = client == null || client.level == null ? 0L : client.level.getGameTime();
+        if (lastHeaderTick != Long.MIN_VALUE && now - lastHeaderTick < HEADER_INTERVAL_TICKS) {
+            return;
+        }
+        lastHeaderTick = now;
         if (this.completionListener != null) {
             this.completionListener.onTaskCompleted();
         }
@@ -237,7 +253,13 @@ public final class ContainerFillMaterialList extends MaterialListBase {
             current = null;
             return;
         }
-        if (list.builtAtVersion != WarehouseStock.snapshotVersion()) {
+        long now = client.level == null ? 0L : client.level.getGameTime();
+        boolean inventoryChanged = false;
+        if (lastInventoryTick == Long.MIN_VALUE || now - lastInventoryTick >= INVENTORY_INTERVAL_TICKS) {
+            lastInventoryTick = now;
+            inventoryChanged = rebuildInventoryCounts();
+        }
+        if (inventoryChanged || list.builtAtVersion != WarehouseStock.snapshotVersion()) {
             list.refreshAvailable();
         }
     }
@@ -252,17 +274,33 @@ public final class ContainerFillMaterialList extends MaterialListBase {
      */
     @Override
     public void updateCounts() {
-        this.countTotal = 0;
-        this.countMissing = 0;
-        this.countMismatched = 0;
+        this.recountTotals();
+    }
+
+    /**
+     * 重算表头三个合计。
+     *
+     * @return 合计有没有变化（没变就不值得重建界面）
+     */
+    private boolean recountTotals() {
+        long total = 0;
+        long missing = 0;
+        long mismatched = 0;
         for (MaterialListEntry entry : this.getMaterialsAll()) {
             if (entry == null) {
                 continue;
             }
-            this.countTotal += entry.getCountTotal();
-            this.countMissing += ContainerGap.trueGap(entry.getCountTotal(), entry.getCountAvailable());
-            this.countMismatched += entry.getCountMismatched();
+            total += entry.getCountTotal();
+            missing += ContainerGap.trueGap(entry.getCountTotal(), entry.getCountAvailable());
+            mismatched += entry.getCountMismatched();
         }
+        boolean changed = total != this.countTotal
+                || missing != this.countMissing
+                || mismatched != this.countMismatched;
+        this.countTotal = total;
+        this.countMissing = missing;
+        this.countMismatched = mismatched;
+        return changed;
     }
 
     /**
@@ -281,10 +319,17 @@ public final class ContainerFillMaterialList extends MaterialListBase {
             this.itemId = itemId;
         }
 
+        /**
+         * 「已有」= 背包 + 仓库。
+         *
+         * <p>🔴 两个来源都<b>只查表</b>：这个方法每帧、每行都会被 Litematica 调（画可用列、
+         * 算缺失、算表头合计各一次）。旧实现在这里扫 36 格背包 + 反射读 printer 缓存，
+         * 几百行 × 60 帧就是每秒几万次 —— 界面卡顿的主因。</p>
+         */
         @Override
         public int getCountAvailable() {
             long warehouse = WarehouseStock.amountOf(this.itemId);
-            int inventory = countInInventory(Minecraft.getInstance(), this.getStack().getItem());
+            int inventory = inventoryCount(this.getStack().getItem());
             long sum = inventory + Math.max(0L, warehouse);
             return sum > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) sum;
         }
@@ -306,6 +351,59 @@ public final class ContainerFillMaterialList extends MaterialListBase {
             return ContainerGap.missingFor(this.getCountTotal(), this.getCountAvailable(),
                     WarehouseStock.rowsRenderedByPrinter());
         }
+    }
+
+    /**
+     * 背包计数缓存（物品 → 件数），前 36 格、与取货计数同口径。
+     *
+     * <p>每 {@value #INVENTORY_INTERVAL_TICKS} tick 整份重算一次，行渲染只查它 ——
+     * 见 {@link ContainerEntry#getCountAvailable()}。</p>
+     */
+    private static Map<Item, Integer> inventoryCounts = Map.of();
+    private static long lastInventoryTick = Long.MIN_VALUE;
+    private static long lastHeaderTick = Long.MIN_VALUE;
+    /** 表头重建最多 1 秒一次（它等于整棵树 {@code initGui()}，顺带把滚动条拉回顶部）。 */
+    private static final int HEADER_INTERVAL_TICKS = 20;
+    /** 背包变化不必每 tick 都重排列表；0.5 秒的误差看不出来。 */
+    private static final int INVENTORY_INTERVAL_TICKS = 10;
+
+    /** 缓存里这种物品有几件（不扫背包）。 */
+    static int inventoryCount(Item item) {
+        if (item == null) {
+            return 0;
+        }
+        Integer count = inventoryCounts.get(item);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * 重算背包缓存。
+     *
+     * @return 是否发生了变化（变了才值得让列表重排 / 重算表头）
+     */
+    static boolean rebuildInventoryCounts() {
+        Map<Item, Integer> next = countInventory(Minecraft.getInstance());
+        if (next.equals(inventoryCounts)) {
+            return false;
+        }
+        inventoryCounts = next;
+        return true;
+    }
+
+    /** 一次遍历算出「背包里每种物品有几件」。 */
+    static Map<Item, Integer> countInventory(Minecraft client) {
+        if (client == null || client.player == null) {
+            return Map.of();
+        }
+        var inventory = client.player.getInventory();
+        Map<Item, Integer> counts = new HashMap<>();
+        for (int slot = 0; slot < Math.min(36, inventory.getContainerSize()); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (!stack.isEmpty()) {
+                counts.merge(stack.getItem(), stack.getCount(), Integer::sum);
+            }
+        }
+        return Map.copyOf(counts);
     }
 
     /** 背包（前 36 格，与取货计数同口径）里这种物品有多少件。 */

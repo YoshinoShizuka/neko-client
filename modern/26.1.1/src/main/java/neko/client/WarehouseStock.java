@@ -61,8 +61,14 @@ public final class WarehouseStock {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("neko-client");
 
-    /** 正常刷新节奏（5 秒）。 */
-    private static final int REFRESH_INTERVAL_TICKS = 100;
+    /**
+     * 正常刷新节奏（2 秒）。
+     *
+     * <p>服务端限流是 200ms（{@code PrinterQueryNetwork.MIN_INTERVAL_MS}），查询只读、
+     * 按请求 id 查索引，2 秒一次比取货那侧轻得多。原来 5 秒的节奏在界面上表现为
+     * 「刚取完货，已有数量还愣着不动」，比 CPU 更影响手感。</p>
+     */
+    private static final int REFRESH_INTERVAL_TICKS = 40;
     /** 等回执的超时；超时就放行下一轮，避免一次丢包把刷新永久卡死。 */
     private static final int RESPONSE_TIMEOUT_TICKS = 40;
     /** 服务端回「限流/规则没开」后的退避时间。 */
@@ -84,8 +90,21 @@ public final class WarehouseStock {
     private static Method printerAmountOfMethod;
     private static Method printerIsReadyMethod;
 
-    private static final Map<String, Long> AMOUNTS = new HashMap<>();
-    private static boolean ready;
+    /**
+     * 当前库存快照：id → 数量。
+     *
+     * <p>🔴 <b>整体替换</b>（{@code volatile} 写一次引用）而不是逐条改：材料列表每帧要按行读
+     * 几十到几百次，读路径必须无锁、无反射、纯哈希查表。旧实现里「复用 printer 缓存」
+     * 那条路是<b>每行两次</b> {@code Method.invoke}（isReady + amountOf），几百行 × 60 帧
+     * = 每秒上万次反射，界面肉眼可见地卡。</p>
+     */
+    private static volatile Map<String, Long> amounts = Map.of();
+    private static volatile boolean ready;
+    /**
+     * 「缺失」列要不要按 printer 的口径给值。每次刷新算一次就够，
+     * 渲染路径每行都问（{@code getCountMissing}），不能在那里做反射。
+     */
+    private static volatile boolean printerRendering;
     private static boolean failureLogged;
     /** 快照版本：每次整份替换 +1，界面靠它决定要不要重算「已有」。 */
     private static long snapshotVersion;
@@ -98,11 +117,7 @@ public final class WarehouseStock {
      * 材料列表可能在构建线程调用，需同步。</p>
      */
     private static final Set<String> WATCHED = new LinkedHashSet<>();
-    /**
-     * 复用 printer 缓存时没有版本号可听：自己记住上次读到的数，变了才让界面重算。
-     * 与 {@link #WATCHED} 共用同一把锁。
-     */
-    private static final Map<String, Long> LAST_SEEN = new HashMap<>();
+    /** 上一次整份搬进来的 printer 数字已经换成 {@code amounts} 自己了，这里只需要节奏位。 */
     private static long lastFingerprintTick = Long.MIN_VALUE;
     /** 指纹别每 tick 都比一次（上百个 id × 反射调用，没必要 20 Hz）。 */
     private static final int FINGERPRINT_INTERVAL_TICKS = 10;
@@ -198,7 +213,7 @@ public final class WarehouseStock {
      */
     public static void noteDemand(Collection<String> ids) {
         // 🔴 不再因为「通道归 printer」就跳过：通道不在我们手上时，这份清单用来
-        //    比对 printer 缓存的数字有没有变（fingerprintPrinterCache），照样必须有。
+        //    把 printer 缓存里的数字批量搬进本地快照（refreshFromPrinter），照样必须有。
         if (!isSourceEnabled() || ids == null || ids.isEmpty()) {
             return;
         }
@@ -207,6 +222,7 @@ public final class WarehouseStock {
             return;
         }
         lastDemandTick = client.level.getGameTime();
+        lastFingerprintTick = Long.MIN_VALUE;   // 首屏别等 0.5 秒才出数
         synchronized (WATCHED) {
             for (String id : ids) {
                 if (id == null || id.isEmpty()) {
@@ -228,7 +244,6 @@ public final class WarehouseStock {
     public static void forgetDemand() {
         synchronized (WATCHED) {
             WATCHED.clear();
-            LAST_SEEN.clear();
         }
         lastFingerprintTick = Long.MIN_VALUE;
     }
@@ -260,18 +275,17 @@ public final class WarehouseStock {
         return snapshotVersion;
     }
 
-    /** 这种物品在虚空仓库里的合计数量（含全部数据组件变体）；还没拿到快照时 0。 */
+    /**
+     * 这种物品在虚空仓库里的合计数量（含全部数据组件变体）；还没拿到快照时 0。
+     *
+     * <p>纯查表：材料列表每帧按行调用，这里<b>不许</b>加锁、反射或任何遍历。</p>
+     */
     public static long amountOf(String id) {
-        if (ownsChannel) {
-            synchronized (AMOUNTS) {
-                if (!ready) {
-                    return 0L;
-                }
-                Long value = AMOUNTS.get(id);
-                return value == null ? 0L : value;
-            }
+        if (id == null || id.isEmpty()) {
+            return 0L;
         }
-        return printerWarehouseAmountOf(id);
+        Long value = amounts.get(id);
+        return value == null ? 0L : value;
     }
 
     /**
@@ -286,7 +300,7 @@ public final class WarehouseStock {
      * {@code ContainerEntry#getCountMissing()} 必须给 {@code total}，让它的减法落在正确的起点上。</p>
      */
     public static boolean rowsRenderedByPrinter() {
-        return printerCache != null && printerReady();
+        return printerRendering;
     }
 
     /** printer 缓存是否已经同步到数据（反射调用；出错按「没有」处理）。 */
@@ -304,15 +318,16 @@ public final class WarehouseStock {
         }
     }
 
-    /** 读 printer 的缓存；不可用或没同步到任何数据时返回 0。 */
-    private static long printerWarehouseAmountOf(String id) {
-        if (printerCache == null || printerAmountOfMethod == null || printerIsReadyMethod == null) {
+    /**
+     * 读 printer 缓存里一条的数量（调用方已经用 {@link #printerReady()} 判过就绪）。
+     *
+     * <p>批量刷新时不要每条都问一次 {@code isReady}：那是纯浪费的第二次反射。</p>
+     */
+    private static long printerAmountRaw(String id) {
+        if (printerCache == null || printerAmountOfMethod == null) {
             return 0L;
         }
         try {
-            if (!Boolean.TRUE.equals(printerIsReadyMethod.invoke(printerCache))) {
-                return 0L;
-            }
             Object value = printerAmountOfMethod.invoke(printerCache, id);
             return value instanceof Long amount ? amount : 0L;
         } catch (Throwable throwable) {
@@ -325,35 +340,55 @@ public final class WarehouseStock {
     }
 
     /**
-     * 盯 printer 缓存里的数字有没有变。
+     * 把 printer 缓存<b>批量</b>读进本地快照。
      *
      * <p>它的缓存只有 {@code apply / clear / amountOf / isReady / size}，没有任何变更通知，
-     * 所以只能自己比对：每 {@value #FINGERPRINT_INTERVAL_TICKS} tick 把
-     * {@link #WATCHED} 里的 id 读一遍，有变化就 {@code snapshotVersion++}，
-     * 界面据此重算「已有 / 缺失」和表头合计。</p>
+     * 所以只能自己定时读。节奏是 {@value #FINGERPRINT_INTERVAL_TICKS} tick（0.5 秒）一次，
+     * 一次读完整份 {@link #WATCHED}（就绪只判一次），<b>整份替换</b>本地快照。
+     * 渲染路径随后只查本地表 —— 这是把「每行每帧两次反射」压成「每 0.5 秒 N 次反射」的地方。</p>
+     *
+     * <p>没人看材料列表时 {@link #tick} 根本不会调到这里：那几百次反射不该为关掉的界面一直跑。</p>
      */
-    private static void fingerprintPrinterCache(long now) {
+    private static void refreshFromPrinter(long now) {
         if (lastFingerprintTick != Long.MIN_VALUE
                 && now - lastFingerprintTick < FINGERPRINT_INTERVAL_TICKS) {
             return;
         }
         lastFingerprintTick = now;
         if (printerCache == null) {
+            printerRendering = false;
+            if (ready || !amounts.isEmpty()) {
+                amounts = Map.of();
+                ready = false;
+                snapshotVersion++;
+            }
             return;
         }
-        boolean changed = false;
-        synchronized (WATCHED) {
-            for (String id : WATCHED) {
-                long amount = printerWarehouseAmountOf(id);
-                Long previous = LAST_SEEN.put(id, amount);
-                if (previous == null || previous.longValue() != amount) {
-                    changed = true;
+        boolean isReady = printerReady();
+        printerRendering = isReady && !WATCHED.isEmpty();
+        Map<String, Long> next = new HashMap<>();
+        if (printerRendering) {
+            synchronized (WATCHED) {
+                for (String id : WATCHED) {
+                    long amount = printerAmountRaw(id);
+                    if (amount > 0L) {
+                        next.put(id, amount);
+                    }
                 }
             }
         }
-        if (changed) {
-            snapshotVersion++;
+        // 数字没变就不动快照：界面靠 snapshotVersion 决定要不要重算/重排整个列表。
+        if (next.equals(amounts) && isReady == ready) {
+            return;
         }
+        amounts = Map.copyOf(next);
+        ready = isReady;
+        snapshotVersion++;
+    }
+
+    /** 最近 {@value #DEMAND_TTL_TICKS} tick 内有没有人问过库存（= 材料列表还开着）。 */
+    private static boolean demandFresh(long now) {
+        return lastDemandTick != Long.MIN_VALUE && now - lastDemandTick <= DEMAND_TTL_TICKS;
     }
 
     private static void tick(Minecraft client) {
@@ -362,7 +397,7 @@ public final class WarehouseStock {
             return;
         }
         if (!isSourceEnabled() || !isSupported()) {
-            if (ready || !AMOUNTS.isEmpty()) {
+            if (ready || !amounts.isEmpty()) {
                 clearSnapshot();
             }
             return;
@@ -372,8 +407,12 @@ public final class WarehouseStock {
 
         if (!ownsChannel) {
             // 复用 printer 的缓存：这条通道的接收器在它手上，我们既发不出去也收不到回执，
-            // 唯一能做的是盯着它缓存的数字有没有变（变了才让界面重算）。
-            fingerprintPrinterCache(now);
+            // 唯一能做的是定时把它缓存里的数字批量搬进本地快照（变了才让界面重算）。
+            // 🔴 没人看材料列表就彻底停：否则关掉界面后还会每 0.5 秒做几百次反射。
+            if (!demandFresh(now)) {
+                return;
+            }
+            refreshFromPrinter(now);
             return;
         }
 
@@ -390,7 +429,7 @@ public final class WarehouseStock {
         if (lastRequestTick != Long.MIN_VALUE && now - lastRequestTick < REFRESH_INTERVAL_TICKS) {
             return;
         }
-        if (lastDemandTick == Long.MIN_VALUE || now - lastDemandTick > DEMAND_TTL_TICKS) {
+        if (!demandFresh(now)) {
             // 没人在看材料列表：不再发包，但保留已有快照，避免界面刚关就闪回 0。
             return;
         }
@@ -461,18 +500,17 @@ public final class WarehouseStock {
             return;
         }
         int size = Math.min(Math.min(ids.size(), values.size()), MAX_CACHE_ENTRIES);
-        synchronized (AMOUNTS) {
-            AMOUNTS.clear();
-            for (int index = 0; index < size; index++) {
-                String id = ids.get(index);
-                Long value = values.get(index);
-                if (id == null || id.isEmpty() || value == null || value <= 0L) {
-                    continue;
-                }
-                AMOUNTS.merge(id, value, Long::sum);
+        Map<String, Long> next = new HashMap<>();
+        for (int index = 0; index < size; index++) {
+            String id = ids.get(index);
+            Long value = values.get(index);
+            if (id == null || id.isEmpty() || value == null || value <= 0L) {
+                continue;
             }
-            ready = true;
+            next.merge(id, value, Long::sum);
         }
+        amounts = Map.copyOf(next);
+        ready = true;
         snapshotVersion++;
     }
 
@@ -526,10 +564,9 @@ public final class WarehouseStock {
     }
 
     private static void clearSnapshot() {
-        synchronized (AMOUNTS) {
-            AMOUNTS.clear();
-            ready = false;
-        }
+        amounts = Map.of();
+        ready = false;
+        printerRendering = false;
         snapshotVersion++;
     }
 
