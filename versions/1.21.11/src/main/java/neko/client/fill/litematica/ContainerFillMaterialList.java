@@ -124,11 +124,13 @@ public final class ContainerFillMaterialList extends MaterialListBase {
      * 当成玩家的材料列表一直问下去。</p>
      */
     private static void takeOverDataManager(ContainerFillMaterialList list) {
-        if (tookOverDataManager) {
-            return;
+        if (!tookOverDataManager) {
+            tookOverDataManager = true;
+            previousList = DataManager.getMaterialList();
         }
-        tookOverDataManager = true;
-        previousList = DataManager.getMaterialList();
+        // 🔴 已经接管过也要指到新表：从本界面再点一次按钮会开一份新表，
+        //    只记「接管过」而不重指，DataManager 会一直停在上一份（已废弃的）表上；
+        //    releaseDataManager 又因为它 != current 而不还原 ⇒ printer 永远问一张死表。
         DataManager.setMaterialList(list);
     }
 
