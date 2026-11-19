@@ -4,6 +4,7 @@ import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.gui.GuiMaterialList;
 import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.materials.MaterialListEntry;
+import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.malilib.util.StringUtils;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
@@ -25,6 +26,12 @@ import java.util.List;
  * 也不需要正在填充。列表就是 Litematica 自己的材料列表界面（{@link GuiMaterialList}），
  * 所以「需要 / 已有 / 缺失」三列、倍数、只显示缺失、排序全都是现成的 ——
  * 本类只负责把三列里的数字填对，外加把标题写成「原理图'名字'容器材料」。</p>
+ *
+ * <h2>算哪一张原理图</h2>
+ * <p>🔴 之前固定算「所有启用的投影」，于是从任何一张图的材料列表点按钮都开出同一份表
+ * （真机踩过）。范围现在由打开时那份材料列表决定（{@link ContainerScope}）：
+ * 从蜂箱农场的材料列表点按钮，算的就是蜂箱农场。拿不到对应关系（热键从世界里直接打开）
+ * 才退回「所有启用的投影」，标题会写「等 N 个」。</p>
  *
  * <h2>三列各是什么</h2>
  * <ul>
@@ -52,23 +59,54 @@ public final class ContainerFillMaterialList extends MaterialListBase {
 
     private long builtAtVersion;
     private QuickLitematicaContainerTotals.Scan lastScan = QuickLitematicaContainerTotals.Scan.EMPTY;
+    /** 这次算哪几个投影（由入口那份材料列表定，见 {@link ContainerScope}）。 */
+    private List<SchematicPlacement> scope = List.of();
     /** 标题形态（原理图名字 + 容器材料），扫描时定下来。 */
     private ContainerTitle.Title title = ContainerTitle.of(List.of());
 
     public ContainerFillMaterialList() {
     }
 
-    /** 打开界面。没有投影时不拦着 —— 空列表本身就是答案「你没放投影」。 */
+    /**
+     * 打开界面。没有投影时不拦着 —— 空列表本身就是答案「你没放投影」。
+     *
+     * <p>范围从<b>当前界面</b>的材料列表反推：热键在某个材料列表里按下时，
+     * 算的也是那一张（与按钮一致）。</p>
+     */
     public static void open(Minecraft client) {
+        open(client, sourceOf(client));
+    }
+
+    /**
+     * 打开界面，并指定「玩家刚才看的是哪份材料列表」。
+     *
+     * @param source 当前材料列表（可以是 {@code null} ⇒ 算所有启用的投影）
+     */
+    public static void open(Minecraft client, MaterialListBase source) {
         if (client == null || client.level == null) {
             return;
         }
         ensureTicker();
         ContainerFillMaterialList list = new ContainerFillMaterialList();
+        list.scope = ContainerScope.resolve(source);
         list.reCreateMaterialList();
         current = list;
         takeOverDataManager(list);
         QuickClientScreenAccess.setScreen(client, new GuiMaterialList(list));
+    }
+
+    /** 当前界面若是材料列表，返回它那份材料列表；否则 {@code null}。 */
+    private static MaterialListBase sourceOf(Minecraft client) {
+        if (client == null) {
+            return null;
+        }
+        return QuickClientScreenAccess.currentScreen(client) instanceof GuiMaterialList gui
+                ? gui.getMaterialList() : null;
+    }
+
+    /** 这次扫描的范围（{@link ContainerScope} 会读它，避免从本界面再点按钮时范围被放大）。 */
+    List<SchematicPlacement> scope() {
+        return this.scope;
     }
 
     /**
@@ -107,14 +145,14 @@ public final class ContainerFillMaterialList extends MaterialListBase {
     }
 
     /**
-     * 从界面按钮进来：按钮回调里没有 client，自己取。
+     * 从某个材料列表的按钮进来：算的就是<b>那一份</b>。
      *
-     * <p>给材料列表工具栏那个「容器材料」混入用（
-     * {@code neko.client.mixin.GuiMaterialListButtonMixin}）—— 混入只依赖本方法，
-     * 不碰 {@code Minecraft} 之外任何会跨版本改名的 API。</p>
+     * <p>🔴 参数是必需项，没有无参重载：混入少传一个参数就只能拿「所有启用的投影」，
+     * 于是所有入口开出同一张表（0.5.7 真机反馈的原症状）。故意不留无参版本，
+     * 免得以后有人顺手调它又把范围放大。</p>
      */
-    public static void openCurrent() {
-        open(Minecraft.getInstance());
+    public static void openCurrent(MaterialListBase source) {
+        open(Minecraft.getInstance(), source);
     }
 
     @Override
@@ -130,7 +168,10 @@ public final class ContainerFillMaterialList extends MaterialListBase {
     /** 重扫投影的容器 NBT，重建整张表（打开界面时调一次）。 */
     @Override
     public void reCreateMaterialList() {
-        QuickLitematicaContainerTotals.Scan scan = QuickLitematicaContainerTotals.scan();
+        if (this.scope.isEmpty()) {
+            this.scope = ContainerScope.allEnabled();
+        }
+        QuickLitematicaContainerTotals.Scan scan = QuickLitematicaContainerTotals.scanScope(this.scope);
         List<MaterialListEntry> entries = new ArrayList<>(scan.rows().size());
         List<String> ids = new ArrayList<>(scan.rows().size());
         for (QuickLitematicaContainerTotals.Row row : scan.rows()) {

@@ -1,9 +1,8 @@
 package neko.client.fill.litematica;
 
-import fi.dy.masa.litematica.data.DataManager;
+import fi.dy.masa.litematica.materials.MaterialListBase;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
-import fi.dy.masa.litematica.schematic.placement.SchematicPlacementManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -33,6 +32,10 @@ import java.util.Set;
  * {@code SchematicPlacement#getSchematic()} → 每个 region 的
  * {@code getBlockEntityMapForRegion}。所以投影没加载、没启用时这里是空的 ——
  * 那正是「没有可比对的东西」，不是错误。</p>
+ *
+ * <h2>扫哪几个投影</h2>
+ * <p>由入口决定，见 {@link ContainerScope}：从材料列表点按钮 ⇒ 只扫<b>那一张</b>；
+ * 拿不到对应关系（热键从世界里直接打开）⇒ 扫全部启用的投影。</p>
  *
  * <h2>不做什么</h2>
  * <ul>
@@ -90,38 +93,35 @@ public final class QuickLitematicaContainerTotals {
     private QuickLitematicaContainerTotals() {
     }
 
-    /** 扫描当前世界所有<b>启用</b>的投影。没有投影时返回 {@link Scan#EMPTY}。 */
-    public static Scan scan() {
+    /**
+     * 扫「当前正在看的那张原理图」。
+     *
+     * <p>🔴 不能扫全部启用投影 —— 那会让所有入口都打开同一份表（真机踩过：
+     * 在蜂箱农场的材料列表里点「容器材料」，弹出的是另一张刷沙机的表）。
+     * 范围由 {@link ContainerScope} 从材料列表本身反推，拿不到才退回全部启用。</p>
+     *
+     * @param source 打开界面前玩家正在看的那份材料列表，可为 {@code null}
+     */
+    public static Scan scanFor(MaterialListBase source) {
+        return scanScope(ContainerScope.resolve(source));
+    }
+
+    /** 扫描给定的一批投影（范围已由调用方决定）。 */
+    public static Scan scanScope(List<SchematicPlacement> placements) {
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null) {
-            return Scan.EMPTY;
-        }
-        SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
-        if (manager == null) {
-            return Scan.EMPTY;
-        }
-        List<SchematicPlacement> placements = new ArrayList<>();
-        for (SchematicPlacement placement : manager.getAllSchematicsPlacements()) {
-            if (placement == null || !placement.isEnabled()) {
-                continue;
-            }
-            if (placement.getSchematic() == null) {
-                continue;
-            }
-            placements.add(placement);
-        }
-        if (placements.isEmpty()) {
+        if (client == null || client.level == null || placements == null || placements.isEmpty()) {
             return Scan.EMPTY;
         }
         long startedAt = System.nanoTime();
         Scan scan = scan(placements, client.level.registryAccess());
-        LOGGER.info("[容器填充物] 合计 {} 种 / {} 件（投影 {} 个，容器 {} 个{}），{} ms",
-                scan.rows().size(), scan.totalItems(), scan.placements(), scan.containers(),
+        LOGGER.info("[容器填充物] 合计 {} 种 / {} 件（投影 {} 个：{}，容器 {} 个{}），{} ms",
+                scan.rows().size(), scan.totalItems(), scan.placements(),
+                String.join(" / ", scan.names()), scan.containers(),
                 scan.truncated() ? "，已截断" : "", (System.nanoTime() - startedAt) / 1_000_000L);
         return scan;
     }
 
-    /** 只扫给定的投影（测试/调试用；正式入口走 {@link #scan()}）。 */
+    /** 只扫给定的投影（{@link #scanScope} 的实际执行者；{@code placements} 已由调用方定好范围）。 */
     static Scan scan(List<SchematicPlacement> placements, HolderLookup.Provider lookup) {
         if (placements == null || placements.isEmpty() || lookup == null) {
             return Scan.EMPTY;

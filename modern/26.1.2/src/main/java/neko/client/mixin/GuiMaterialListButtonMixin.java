@@ -19,6 +19,10 @@ import java.util.List;
  * 加一个「容器材料」按钮 —— 点它打开 {@link ContainerFillMaterialList}
  * （整张原理图容器填充物合计 vs 背包 + 虚空仓库库存）。
  *
+ * <p>打开的是<b>本界面这份材料列表对应那张原理图</b>：按钮回调把
+ * {@code self.getMaterialList()} 一起传下去，由 {@code ContainerScope} 反推投影。
+ * 不传的话所有入口都会开出同一份表。</p>
+ *
  * <h2>为什么是 TAIL of createButtons()</h2>
  * <p>{@code createButtons()} 是唯一建工具栏的地方，建完时才拿得到「该行最右边缘」。
  * {@code createButton} 的第三个参数是 private record 里的枚举，源码写不出来（见
@@ -57,6 +61,9 @@ public class GuiMaterialListButtonMixin {
 
         ButtonGeneric button = new ButtonGeneric(x, rowY, width, 20, label,
                 StringUtils.translate(HOVER_KEY));
-        self.addButton(button, (clicked, mouseButton) -> ContainerFillMaterialList.openCurrent());
+        // 🔴 必须把「本界面这份材料列表」传进去：不传就只能扫「所有启用的投影」，
+        // 于是从任何一张图点进来都开出同一份表（0.5.7 真机反馈的原症状）。
+        self.addButton(button, (clicked, mouseButton) ->
+                ContainerFillMaterialList.openCurrent(self.getMaterialList()));
     }
 }
