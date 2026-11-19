@@ -5,7 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 /**
- * 配置文件的<b>纯文本层</b>：一段 JSON 文本 ↔ 六个字段。
+ * 配置文件的<b>纯文本层</b>：一段 JSON 文本 ↔ 八个字段。
  *
  * <h2>为什么单独拆一层</h2>
  * <p>从 0.3.0 起配置对象改由 malilib 提供（{@code ConfigBooleanHotkeyed} /
@@ -37,6 +37,11 @@ final class SearchConfigJson {
      */
     static final boolean DEFAULT_SEARCH_BOX = true;
     static final boolean DEFAULT_FILL_GESTURE = true;
+    /**
+     * 聊天静音<b>默认关</b>：升级后老玩家仍照常看到虚空仓库的全部提示，
+     * 想静音得自己去配置界面打开。反过来（默认开）会让玩家以为服务端不说话了。
+     */
+    static final boolean DEFAULT_SILENCE_CHAT = false;
     static final String DEFAULT_KEY_SEARCH_BOX = "";
     static final String DEFAULT_KEY_FILL_GESTURE = "";
     static final String DEFAULT_KEY_OPEN_GUI = "";
@@ -82,6 +87,7 @@ final class SearchConfigJson {
      */
     record Values(boolean searchBox,
                   boolean fillGesture,
+                  boolean silenceChat,
                   String keySearchBox,
                   String keyFillGesture,
                   String keyFillCombo,
@@ -89,7 +95,7 @@ final class SearchConfigJson {
                   String keyOpenRecipes) {
 
         static Values defaults() {
-            return new Values(DEFAULT_SEARCH_BOX, DEFAULT_FILL_GESTURE,
+            return new Values(DEFAULT_SEARCH_BOX, DEFAULT_FILL_GESTURE, DEFAULT_SILENCE_CHAT,
                     DEFAULT_KEY_SEARCH_BOX, DEFAULT_KEY_FILL_GESTURE,
                     DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES);
         }
@@ -120,6 +126,7 @@ final class SearchConfigJson {
         return new Values(
                 readBoolean(json, "searchBox", DEFAULT_SEARCH_BOX),
                 readBoolean(json, "fillGesture", DEFAULT_FILL_GESTURE),
+                readBoolean(json, "silenceChat", DEFAULT_SILENCE_CHAT),
                 readKey(json, "keySearchBox", DEFAULT_KEY_SEARCH_BOX),
                 readKey(json, "keyFillGesture", DEFAULT_KEY_FILL_GESTURE),
                 readKeyKeepingEmpty(json, "keyFillCombo", DEFAULT_KEY_FILL_COMBO),
@@ -135,18 +142,20 @@ final class SearchConfigJson {
     static String render(Values values) {
         return """
                 {
-                  "_readme": "两个功能的开关 + 五个热键（多出来的那个是打开配方本）。改完保存后重进一次世界即生效（游戏内按热键切换是立刻生效的）。",
+                  "_readme": "两个功能开关 + 一个聊天静音开关 + 五个热键（多出来的那个是打开配方本）。改完保存后重进一次世界即生效（游戏内按热键切换是立刻生效的）。",
                   "_readme_keys": "开关热键默认全部留空（未绑定），需要自己绑一个：进游戏后按配置界面的热键，或在任意 malilib 模组的配置界面右上角下拉框里选本模组。写法是 malilib 的键名：单个键写 H，组合键写 LEFT_CONTROL,LEFT_ALT，鼠标键写 BUTTON_1。",
                   "_readme_fillCombo": "keyFillCombo 是「取满手势」的组合键，必须恰好包含一个鼠标键：BUTTON_1 = 左键、BUTTON_2 = 右键、BUTTON_3 = 中键（26.3 也可写 MOUSE_LEFT / MOUSE_RIGHT / MOUSE_MIDDLE）。0.4.7 起默认 LEFT_CONTROL,LEFT_ALT,BUTTON_2 = Ctrl+Alt+右键；想用左键就把它改成 BUTTON_1。判据严格匹配：绑右键时左键不会触发，反之亦然。只对前 5 行内容格生效（第 6 行是导航行，玩家背包/快捷栏不算）。写成空字符串 = 清空 = 关掉这个手势（开关开着也不响应）。",
+                  "_readme_silenceChat": "silenceChat = true 时，客户端直接丢弃虚空仓库发来的聊天提示（中文前缀 [虚空仓库]、英文前缀 [Void Warehouse]、配方本不带前缀的 └ 续行）。只影响这一台客户端的显示，不改动服务端行为，也清不掉已经显示过的历史消息。默认 false。",
                   "searchBox": %s,
                   "fillGesture": %s,
+                  "silenceChat": %s,
                   "keySearchBox": "%s",
                   "keyFillGesture": "%s",
                   "keyFillCombo": "%s",
                   "keyOpenGui": "%s",
                   "keyOpenRecipes": "%s"
                 }
-                """.formatted(values.searchBox(), values.fillGesture(),
+                """.formatted(values.searchBox(), values.fillGesture(), values.silenceChat(),
                 values.keySearchBox(), values.keyFillGesture(), values.keyFillCombo(),
                 values.keyOpenGui(), values.keyOpenRecipes());
     }

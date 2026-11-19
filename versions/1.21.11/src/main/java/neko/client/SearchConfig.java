@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * 两个功能的开关 + 四个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
+ * 两个功能开关 + 一个聊天静音开关 + 四个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
  *
  * <h2>为什么是 {@code ConfigBooleanHotkeyed}</h2>
  * <p>它是「布尔开关 + 一个热键」的合体：在配置界面里显示成<b>一行</b>
@@ -39,7 +39,7 @@ import java.util.List;
  * <h2>落盘</h2>
  * <p>仍然是 {@code config/neko-client.json}，格式由
  * {@link SearchConfigJson} 这一层负责（纯函数、可单测）。本类只做
- * 「malilib 配置对象 ↔ 那五个字段」的搬运，并实现 {@link IConfigHandler}
+ * 「malilib 配置对象 ↔ 那八个字段」的搬运，并实现 {@link IConfigHandler}
  * 让 malilib 的 {@code ConfigManager} 也能触发加载 / 保存。</p>
  */
 public final class SearchConfig implements IConfigHandler {
@@ -79,6 +79,21 @@ public final class SearchConfig implements IConfigHandler {
     public static final ConfigBooleanHotkeyed FILL_GESTURE = new ConfigBooleanHotkeyed(
             "fillGesture", SearchConfigJson.DEFAULT_FILL_GESTURE,
             SearchConfigJson.DEFAULT_KEY_FILL_GESTURE, HOTKEY_SETTINGS).apply(PREFIX);
+
+    /**
+     * 静音虚空仓库的聊天提示（0.5.2 新增）。
+     *
+     * <p>这不是「功能开关」而是<b>显示偏好</b>：它不参与
+     * {@link #anyFeatureEnabled()} 的握手判定 —— 只开静音时既不建搜索框，
+     * 也不向服务端请求目录，纯粹在收到系统聊天包时把命中
+     * {@link VoidWarehouseChatFilter} 的那几条丢掉。</p>
+     *
+     * <p>默认 <b>false</b>：升级后老玩家仍照常看到提示，避免「服务端不说话了」
+     * 的困惑。热键留空（与其它开关一致，不抢字母键）。</p>
+     */
+    public static final ConfigBooleanHotkeyed SILENCE_CHAT = new ConfigBooleanHotkeyed(
+            "silenceChat", SearchConfigJson.DEFAULT_SILENCE_CHAT,
+            "", HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
      * 取满手势的<b>组合键</b>（0.4.7 起默认 Ctrl + Alt + 右键；只影响新生成的配置，
@@ -127,15 +142,15 @@ public final class SearchConfig implements IConfigHandler {
      * malilib 的热键表（{@code addHotkeysForCategory} 要 {@code IHotkey}）。</p>
      */
     public static final List<IHotkey> OPTIONS =
-            List.of(SEARCH_BOX, FILL_GESTURE, FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
+            List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
 
     /**
-     * 配置界面「通用」页：两个功能开关。
+     * 配置界面「通用」页：三个开关（第三个是聊天静音）。
      *
      * <p>它们都是 {@code ConfigBooleanHotkeyed}，一格里同时有复选框和按键按钮 ——
      * 也就是说<b>开关的热键本来就摆在这一行</b>，不需要在「快捷键」页再列一遍。</p>
      */
-    public static final List<IHotkey> GUI_FEATURES = List.of(SEARCH_BOX, FILL_GESTURE);
+    public static final List<IHotkey> GUI_FEATURES = List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT);
 
     /**
      * 配置界面「快捷键」页：纯热键条目（不带开关的）。
@@ -179,6 +194,7 @@ public final class SearchConfig implements IConfigHandler {
             // 布尔值与热键一起灌：malilib 的这个 setter 就是为「一对值」准备的
             SEARCH_BOX.setBooleanHotkeyValue(Pair.of(values.searchBox(), values.keySearchBox()));
             FILL_GESTURE.setBooleanHotkeyValue(Pair.of(values.fillGesture(), values.keyFillGesture()));
+            SILENCE_CHAT.setBooleanValue(values.silenceChat());
             FILL_COMBO.setHotkeyStringValue(values.keyFillCombo());
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
@@ -194,7 +210,7 @@ public final class SearchConfig implements IConfigHandler {
         Pair<Boolean, String> box = SEARCH_BOX.getBooleanHotkeyValue();
         Pair<Boolean, String> fill = FILL_GESTURE.getBooleanHotkeyValue();
         String text = SearchConfigJson.render(new SearchConfigJson.Values(
-                box.getLeft(), fill.getLeft(),
+                box.getLeft(), fill.getLeft(), SILENCE_CHAT.getBooleanValue(),
                 box.getRight(), fill.getRight(),
                 FILL_COMBO.getHotkeyStringValue(),
                 OPEN_GUI.getHotkeyStringValue(),
@@ -235,6 +251,11 @@ public final class SearchConfig implements IConfigHandler {
     /** 取满手势开关（关闭后退回原版「取 1 个」，界面上没有任何残迹） */
     public static boolean isFillGestureEnabled() {
         return FILL_GESTURE.getBooleanValue();
+    }
+
+    /** 聊天静音开关（只影响这一台客户端的显示，不改动服务端行为） */
+    public static boolean isChatSilenced() {
+        return SILENCE_CHAT.getBooleanValue();
     }
 
     /**

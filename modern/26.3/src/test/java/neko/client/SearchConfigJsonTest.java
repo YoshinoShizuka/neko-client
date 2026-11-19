@@ -71,6 +71,25 @@ class SearchConfigJsonTest {
                 () -> assertFalse(values.fillGesture()));
     }
 
+    @Test
+    @DisplayName("A5 🔴 老配置没有 silenceChat ⇒ 默认 false（升级后不能突然把提示全吃掉）")
+    void missingSilenceChatDefaultsOff() {
+        assertAll(
+                () -> assertFalse(SearchConfigJson.parse("{}").silenceChat()),
+                () -> assertFalse(SearchConfigJson.parse("{\"searchBox\": false}").silenceChat()));
+    }
+
+    @Test
+    @DisplayName("A6 silenceChat 写 true ⇒ 真的读成 true（不能和另外两个开关串位）")
+    void silenceChatIsReadIndependently() {
+        SearchConfigJson.Values values = SearchConfigJson.parse(
+                "{\"searchBox\": false, \"fillGesture\": true, \"silenceChat\": true}");
+        assertAll(
+                () -> assertFalse(values.searchBox()),
+                () -> assertTrue(values.fillGesture()),
+                () -> assertTrue(values.silenceChat()));
+    }
+
     // ------------------------------------------------------------ B 组：类型不对
 
     @Test
@@ -92,6 +111,15 @@ class SearchConfigJsonTest {
                         "数字 1 也回落默认 true —— 不能把 1 当成 true"),
                 () -> assertTrue(SearchConfigJson.parse("{\"fillGesture\": 0}").fillGesture(),
                         "fillGesture 同样回落"));
+    }
+
+    @Test
+    @DisplayName("B3 silenceChat 写成字符串 \"true\" ⇒ 回落 false，不能静默变成开")
+    void silenceChatStringValueFallsBack() {
+        assertAll(
+                () -> assertFalse(SearchConfigJson.parse("{\"silenceChat\": \"true\"}").silenceChat()),
+                () -> assertFalse(SearchConfigJson.parse("{\"silenceChat\": 1}").silenceChat()),
+                () -> assertFalse(SearchConfigJson.parse("{\"silenceChat\": null}").silenceChat()));
     }
 
     // ------------------------------------------------------------ C 组：坏输入
@@ -125,7 +153,7 @@ class SearchConfigJsonTest {
         for (boolean searchBox : new boolean[]{true, false}) {
             for (boolean fill : new boolean[]{true, false}) {
                 SearchConfigJson.Values written = new SearchConfigJson.Values(
-                        searchBox, fill,
+                        searchBox, fill, false,
                         SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                         SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                         SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
@@ -166,6 +194,27 @@ class SearchConfigJsonTest {
                 () -> assertFalse(text.contains("\"searchBox\": \"false\""), "不能写成字符串"));
     }
 
+    @Test
+    @DisplayName("D4 silenceChat 的 true / false 都能穿过 render→parse，模板带 _readme_silenceChat")
+    void silenceChatRoundTrips() {
+        for (boolean silence : new boolean[]{true, false}) {
+            SearchConfigJson.Values written = new SearchConfigJson.Values(
+                    true, true, silence,
+                    SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
+                    SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
+                    SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
+                    SearchConfigJson.DEFAULT_KEY_OPEN_GUI,
+                    SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES);
+            String text = SearchConfigJson.render(written);
+            assertAll(
+                    () -> assertEquals(written, SearchConfigJson.parse(text)),
+                    () -> assertTrue(text.contains("\"_readme_silenceChat\""),
+                            "手改配置的人必须看得到这个开关管什么"),
+                    () -> assertTrue(text.contains("\"silenceChat\": " + silence),
+                            "落盘必须是裸布尔值"));
+        }
+    }
+
     // ------------------------------------------------------------ E 组：语义判据
 
     @Test
@@ -193,6 +242,13 @@ class SearchConfigJsonTest {
                 () -> assertTrue(values(true, false).anyEnabled(), "只开搜索框也要握手"),
                 () -> assertTrue(values(false, true).anyEnabled(), "只开取满也要握手"),
                 () -> assertFalse(values(false, false).anyEnabled(), "都关才不握手"));
+    }
+
+    @Test
+    @DisplayName("E3 默认静音必须是关：新开关不能悄悄改变老玩家看到的提示")
+    void silenceChatDefaultsOff() {
+        assertFalse(SearchConfigJson.Values.defaults().silenceChat(),
+                "静音默认必须 false；默认 true 会让玩家以为服务端坏了");
     }
 
     // ------------------------------------------------------------ F 组：热键字段
@@ -229,7 +285,7 @@ class SearchConfigJsonTest {
     @DisplayName("F3 组合键串往返不失真（malilib 的逗号分隔写法）")
     void comboHotkeyRoundTrips() {
         SearchConfigJson.Values written = new SearchConfigJson.Values(
-                true, false, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V",
+                true, false, true, "LEFT_CONTROL,LEFT_ALT", "J", "BUTTON_2,LEFT_SHIFT", "RIGHT_SHIFT,V",
                 "LEFT_ALT,G");
         assertEquals(written, SearchConfigJson.parse(SearchConfigJson.render(written)));
     }
@@ -268,7 +324,7 @@ class SearchConfigJsonTest {
     @DisplayName("G2 清空后的空串要能穿过 render→parse 一轮（「关不掉」就是在这里丢的）")
     void clearedFillComboSurvivesRoundTrip() {
         SearchConfigJson.Values cleared = new SearchConfigJson.Values(
-                true, true,
+                true, true, false,
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                 "",   // ← 玩家在配置界面里把组合键清掉了
@@ -299,7 +355,7 @@ class SearchConfigJsonTest {
     // ------------------------------------------------------------ 小工具
 
     private static SearchConfigJson.Values values(boolean searchBox, boolean fillGesture) {
-        return new SearchConfigJson.Values(searchBox, fillGesture,
+        return new SearchConfigJson.Values(searchBox, fillGesture, false,
                 SearchConfigJson.DEFAULT_KEY_SEARCH_BOX,
                 SearchConfigJson.DEFAULT_KEY_FILL_GESTURE,
                 SearchConfigJson.DEFAULT_KEY_FILL_COMBO,
@@ -311,7 +367,7 @@ class SearchConfigJsonTest {
                                      String keySearchBox, String keyFillGesture,
                                      String keyOpenGui, String keyFillCombo) {
         return SearchConfigJson.render(new SearchConfigJson.Values(
-                searchBox, fillGesture, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui,
+                searchBox, fillGesture, false, keySearchBox, keyFillGesture, keyFillCombo, keyOpenGui,
                 SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES));
     }
 }
