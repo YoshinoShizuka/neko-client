@@ -2,7 +2,6 @@
 // Optional branch stub: kept so the vendored fill engine compiles unchanged.
 package neko.client.fill.config;
 
-import fi.dy.masa.malilib.config.options.ConfigHotkey;
 import neko.client.SearchConfig;
 import java.util.List;
 
@@ -31,10 +30,5 @@ public final class QuickCraftConfigs {
     public static List<String> getContainerFillProtectedItems() { return List.of(); }
     public static int getQuickShulkerActionIntervalTicks() { return 0; }
     public static void saveToFile() { SearchConfig.saveToFile(); }
-
-    public static final class Hotkeys {
-        public static final ConfigHotkey CONTINUOUS_CONTAINER_FILL = SearchConfig.CONTINUOUS_FILL;
-        private Hotkeys() { }
-    }
 
 }

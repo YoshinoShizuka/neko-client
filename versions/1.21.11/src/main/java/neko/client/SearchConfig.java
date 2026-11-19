@@ -142,27 +142,6 @@ public final class SearchConfig implements IConfigHandler {
             "openRecipes", SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES, HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
-     * 仓库补货热键（0.5.3）：手里拿着某物品按下 → 从虚空仓库取同种物品塞进背包。
-     *
-     * <p>不是开关，是一次性动作。默认未绑定（与其它热键一致，不抢键位）。
-     * 这条通道独立于仓库界面那套 hello/catalog 握手 —— 不需要开界面、不需要服务端支持搜索，
-     * 只要有 {@code printer_take} 通道即可。</p>
-     */
-    public static final ConfigHotkey WAREHOUSE_TAKE = new ConfigHotkey(
-            "warehouseTake", SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE, HOTKEY_SETTINGS).apply(PREFIX);
-
-    /**
-     * 连续填充热键（默认未绑定）。<b>按一下启用、再按一下关闭</b>，不要求按住。
-     *
-     * <p>0.5.4 初版沿用 quickcraft 的「按住」判据，26.x 的 malilib 无法可靠回答
-     * 「任意键现在按着没有」，绑 KP_9 之类就永远不触发。现在由热键 PRESS 回调
-     * 切换 {@link neko.client.fill.ContinuousFillControl} 的纯状态，右键投影容器
-     * 进入连续填充，直到再次按热键或目标填满。</p>
-     */
-    public static final ConfigHotkey CONTINUOUS_FILL = new ConfigHotkey(
-            "continuousFill", SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL, HOTKEY_SETTINGS).apply(PREFIX);
-
-    /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
@@ -172,7 +151,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL, FILL_COMBO,
-                    OPEN_GUI, OPEN_RECIPES, WAREHOUSE_TAKE, CONTINUOUS_FILL);
+                    OPEN_GUI, OPEN_RECIPES);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -190,7 +169,23 @@ public final class SearchConfig implements IConfigHandler {
      * 「取满」开关只回答开不开，<b>按哪个键</b>在这一页。</p>
      */
     public static final List<IHotkey> GUI_HOTKEYS =
-            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, WAREHOUSE_TAKE, CONTINUOUS_FILL);
+            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
+
+    /**
+     * 🔴 把开关热键的「切换提示」也翻成中文。
+     *
+     * <p>malilib 的 {@code ConfigBooleanHotkeyed} 自带一条「已切换 X 为 开/关」提示，
+     * 它读的是 {@code getPrettyName()}，默认会把内部名按驼峰拆成 {@code Projection Fill}，
+     * 与配置界面里翻译好的「投影容器填充」对不上（真机截图里就是半英文）。
+     * 设成带 {@code prettyName.} 段的翻译键后，malilib 自己会查我们的语言文件。
+     * 五版本 malilib 的 {@code setPrettyName} 已 javap 核对存在。</p>
+     */
+    static {
+        SEARCH_BOX.setPrettyName(PREFIX + ".prettyName.searchBox");
+        FILL_GESTURE.setPrettyName(PREFIX + ".prettyName.fillGesture");
+        SILENCE_CHAT.setPrettyName(PREFIX + ".prettyName.silenceChat");
+        PROJECTION_FILL.setPrettyName(PREFIX + ".prettyName.projectionFill");
+    }
 
     /** 给 malilib 的 {@code ConfigManager} 用（它会自己 new 一个；本类只有静态状态） */
     public SearchConfig() {
@@ -231,8 +226,6 @@ public final class SearchConfig implements IConfigHandler {
             FILL_COMBO.setHotkeyStringValue(values.keyFillCombo());
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
-            WAREHOUSE_TAKE.setHotkeyStringValue(values.keyWarehouseTake());
-            CONTINUOUS_FILL.setHotkeyStringValue(values.keyContinuousFill());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -250,9 +243,7 @@ public final class SearchConfig implements IConfigHandler {
                 box.getRight(), fill.getRight(),
                 FILL_COMBO.getHotkeyStringValue(),
                 OPEN_GUI.getHotkeyStringValue(),
-                OPEN_RECIPES.getHotkeyStringValue(),
-                WAREHOUSE_TAKE.getHotkeyStringValue(),
-                CONTINUOUS_FILL.getHotkeyStringValue()));
+                OPEN_RECIPES.getHotkeyStringValue()));
 
         Path path = file();
         try {

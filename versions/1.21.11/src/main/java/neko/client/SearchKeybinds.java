@@ -9,7 +9,6 @@ import fi.dy.masa.malilib.hotkeys.IKeybindManager;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
 import fi.dy.masa.malilib.util.InfoUtils;
 import fi.dy.masa.malilib.util.StringUtils;
-import neko.client.fill.ContinuousFillControl;
 
 /**
  * 把 malilib 的配置对象接到实际行为上（照 MiniHUD 的写法）。
@@ -53,8 +52,6 @@ public final class SearchKeybinds {
                 "message.neko_client.fill_off"));
         SearchConfig.OPEN_GUI.getKeybind().setCallback(new OpenGuiCallback());
         SearchConfig.OPEN_RECIPES.getKeybind().setCallback(new OpenRecipesCallback());
-        SearchConfig.WAREHOUSE_TAKE.getKeybind().setCallback(new WarehouseTakeCallback());
-        SearchConfig.CONTINUOUS_FILL.getKeybind().setCallback(new ContinuousFillCallback());
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -124,46 +121,6 @@ public final class SearchKeybinds {
                 return true;
             }
             GuiBase.openGui(new RecipeBrowseGui());
-            return true;
-        }
-    }
-
-    /**
-     * 仓库补货：手持什么就向虚空仓库要什么（0.5.3）。
-     *
-     * <p>纯热键、不需要开界面；{@link WarehouseTakeNetwork#begin} 内部会自检手持物、
-     * 通道支持与「是否已有请求在飞」。搜索框聚焦时不触发（那一击属于输入）。</p>
-     */
-    private static final class WarehouseTakeCallback implements IHotkeyCallback {
-
-        @Override
-        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
-            if (action != KeyAction.PRESS || SearchClientState.isSearchFocused()) {
-                return false;
-            }
-            return WarehouseTakeNetwork.begin(net.minecraft.client.Minecraft.getInstance());
-        }
-    }
-
-    /**
-     * 连续填充（0.5.4 修复）：任意绑定键按一下启用、再按一下关闭。
-     *
-     * <p>为什么不用「按住」：26.x 的 malilib 用坏掉的 isKeyDown 每帧清 PRESSED_KEYS，
-     * 键盘键的 held 状态不可信；而热键 PRESS 回调走的是 malilib 自己的事件派发，
-     * 其他热键（打开界面 / 仓库补货）都在用它。切换状态放在填充引擎的纯类里，
-     * 便于单测与产物断言。</p>
-     */
-    private static final class ContinuousFillCallback implements IHotkeyCallback {
-
-        @Override
-        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
-            if (action != KeyAction.PRESS || SearchClientState.isSearchFocused()) {
-                return false;
-            }
-            boolean on = ContinuousFillControl.toggle();
-            InfoUtils.printActionbarMessage(on
-                    ? "message.neko_client.continuous_fill_on"
-                    : "message.neko_client.continuous_fill_off");
             return true;
         }
     }

@@ -226,7 +226,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
     private void handleContinuousFillHotkey(Minecraft client) {
         boolean fillDown = QuickCraftKeyBindings.isHotkeyDown(
                 client,
-                QuickCraftConfigs.Hotkeys.CONTINUOUS_CONTAINER_FILL.getKeybind(),
+                null, // 连续填充热键选项已移除；这里仅保留 keyUse 兼容路径
                 client.options.keyUse
         );
         if (!fillDown) {
@@ -974,7 +974,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
     ) {
         boolean hotkeyHeld = QuickCraftKeyBindings.isHotkeyDown(
                 client,
-                QuickCraftConfigs.Hotkeys.CONTINUOUS_CONTAINER_FILL.getKeybind(),
+                null, // 连续填充热键选项已移除；这里仅保留 keyUse 兼容路径
                 client.options.keyUse
         );
         if ((!lastContinuousFillDown && !hotkeyHeld) || continuousTask != null || target == null) {

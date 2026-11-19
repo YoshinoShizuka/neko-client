@@ -7,8 +7,6 @@
   "neko_client.config.comment.fillCombo": "Hold this, then click a slot in the first 5 content rows to withdraw until\nyour inventory can hold no more (row 6 is navigation; your own inventory and\nhotbar are not fill targets). Combo = exactly one mouse button + any of\nShift / Ctrl / Alt. Since 0.4.7 the default is Ctrl+Alt+right click (BUTTON_2);\nfor left click change the mouse button to BUTTON_1, middle is BUTTON_3.\nOnly these three modifiers work on the keyboard side - Vanilla exposes only\ntheir state; binding a letter/number key marks the combo as unusable (the join\nlog says why). Matching is strict with no button-code tolerance: binding right\nnever triggers on left, and vice versa. The verdict log states the clicked and\nthe bound key code; a wrong region is reported as inventory / hotbar / nav row.\nEmpty = off.",
   "neko_client.config.name.silenceChat": "Silence chat messages",
   "neko_client.config.comment.silenceChat": "When on, this client discards every chat message sent by the Void Warehouse: the [Void Warehouse] / [虚空仓库] prefixes and the unprefixed recipe-book continuation lines starting with the corner mark.\nDisplay only - the server still sends them and other players still see them; messages already in the chat history are kept. Off by default.",
-  "neko_client.config.name.warehouseTake": "Warehouse restock hotkey",
-  "neko_client.config.comment.warehouseTake": "Hold an item and press this hotkey to withdraw the same item from the Void Warehouse into your inventory, until it can hold no more.\nNo warehouse screen needed. Requires carpet-Neko-Addition 1.0.17+ on the server with voidWarehouse and voidWarehouseRestock both enabled. Unbound by default.",
   "neko_client.config.name.openRecipes": "Open Recipe Book",
   "neko_client.config.comment.openRecipes": "Opens the recipe-book browser: every entry as \"output x count <- ingredients\", each deletable (two taps, shared by the whole server, no undo).\nRequires the void warehouse screen to be open and carpet-Neko-Addition 1.0.17+ on the server.",
   "neko_client.config.name.openGui": "Open config GUI",
@@ -67,9 +65,9 @@
   "neko_client.fill.message.litematica_autofill.no_container_content": "Void Warehouse fill: No usable projection container contents at the current position",
   "neko_client.fill.message.separator": ", ",
   "neko_client.config.name.projectionFill": "Projection container fill",
-  "neko_client.config.comment.projectionFill": "Fill opened containers from schematic projection; off by default",
-  "neko_client.config.name.continuousFill": "Continuous fill hotkey",
-  "neko_client.config.comment.continuousFill": "Press once to enable continuous fill, again to disable; unbound by default",
-  "message.neko_client.continuous_fill_on": "Continuous fill: ON (right-click a projected container to start)",
-  "message.neko_client.continuous_fill_off": "Continuous fill: OFF"
+  "neko_client.config.comment.projectionFill": "Fill opened containers from schematic projection; missing items are withdrawn from the Void Warehouse; off by default",
+  "neko_client.config.prettyName.searchBox": "Search box",
+  "neko_client.config.prettyName.fillGesture": "Fill gesture",
+  "neko_client.config.prettyName.silenceChat": "Silence chat",
+  "neko_client.config.prettyName.projectionFill": "Projection container fill"
 }
