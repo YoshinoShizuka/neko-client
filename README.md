@@ -12,6 +12,7 @@
 4. **独立开关 + 可自定义热键** —— 两个功能各一套，由 **malilib**（MiniHUD / Litematica 那套）管，设置落 `config/neko-client.json`。
 5. **聊天静音开关**（0.5.2）—— 打开后，本客户端不再显示虚空仓库发来的**任何**聊天提示（含配方本那些不带前缀的续行）。只管显示，服务端照常发、别人照常看。
 6. **仓库补货热键**（0.5.3）—— 手里拿着某物品按热键，从虚空仓库取同种物品塞进背包，取到放不下为止。不需要开仓库界面。
+7. **投影容器填充**（0.5.4，批次 A）—— 装了 Litematica 时，右键投影里的箱子/漏斗/发射器等容器，打开后按投影内容**逐格填充**；缺料可接仓库补货。默认关闭，装了 quickcraft 时自动让位。
 
 ![Side](https://img.shields.io/badge/side-%E7%BA%AF%E5%AE%A2%E6%88%B7%E7%AB%AF-informational) ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.x-2ea043)
 
@@ -47,14 +48,29 @@
 
 > 🔴 **不生效怎么查**：进服后日志会打印 `取满组合键=…（判定：可用 / 不可用：原因）`，之后每次带修饰键的点击都会留一行判据日志（点的是哪个键码、绑的是哪个、命不命中），点错区域会写出「区域=玩家背包 / 快捷栏 / 第 6 行导航行」。完整排障表、五轮真机事故与日志证据见本地排障手册 `docs/取满手势五轮事故与排障手册.md`（该文件按项目铁律只留在本地，不随仓库分发）。
 
+## 投影容器填充（0.5.4，批次 A）
+
+```
+安装 Litematica + 打开 projectionFill
+  → 右键投影中的容器（箱子 / 木桶 / 漏斗 / 发射器 / 熔炉 …）
+  → 打开真实容器后，客户端按投影 NBT 逐槽位点击填充
+  → 关箱；绑了 continuousFill 时按住可连续跨容器
+```
+
+- **默认关闭**：这是新功能，不能让升级后的老玩家突然发现右键变了。`projectionFill` 关着时相关 tick 监听器直接空转。
+- **Litematica 是可选依赖**：没装时读不到投影，右键行为原样；26.1.1 借用 26.1.2 的 Litematica 编译，不会因缺类崩溃。
+- **1.21.11 的降级**：右键自动填充可用；连续填充依赖 26.2+ 的界面压制注入点，1.21.11 没有对应混入，故该子功能在此版本不启用（不硬挂 mixin，以免启动即崩）。
+- **与 quickcraft 互斥**：两个 mod 同时安装时本功能强制关闭，避免两套逻辑抢同一次右键。
+- **范围**：批次 A 只搬填充主路径；容器锁、材料自动收集、Quick Shulker 桥接、3D 预览和验证器 UI 都用 stub 顶住，后续批次再补。
+
 ## 安装
 
 mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一个 jar：
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.3.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.5.3.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.4.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.5.4.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -77,6 +93,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | `searchBox` | `true` | 界面里**不再创建**搜索框（不占地方、不吃按键、不发 `search_apply`），取满手势照常可用 |
 | `fillGesture` | `true` | 取满手势退回原版「取 1 个」，搜索框照常可用（组合键还绑着也不响应） |
 | `silenceChat`（0.5.2） | `false` | 打开后隐藏虚空仓库的全部聊天提示（见下节）；关掉后新消息立刻恢复 |
+| `projectionFill`（0.5.4） | `false` | 打开后右键投影容器会按投影内容填充；关闭时右键行为完全原样 |
 
 | 热键（配置界面里的名字） | 默认键 | 说明 |
 | --- | --- | --- |
@@ -87,6 +104,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | 取满组合键 / `fillCombo` | `LEFT_CONTROL,LEFT_ALT,BUTTON_2` | **不是开关，是手势本身**：按住它再点格子。只认绑定的那个鼠标键，未绑定的键一律不触发 |
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面 |
 | 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增；0.5.0 起带图标/滚动/搜索；随地可用，不必开着仓库） |
+| 连续填充 / `continuousFill` | **未绑定** | 按住再右键，连续跨多个投影容器填充；建议绑 `BUTTON_2` |
 
 三条开关热键默认留空，是因为 `H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车。`fillCombo` 是唯一给默认值的例外 —— 它是**手势本身**，留空等于把「可配置化」做成功能删除。
 
@@ -144,7 +162,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 配置 25 + 组合键 18 + 配方本 43 + 聊天静音 9 + 仓库补货 7 = 102 条
+.\gradlew.bat :modern:26.3:test        REM 配置 25 + 组合键 18 + 配方本 43 + 聊天静音 9 + 仓库补货 7 + 投影填充配置 2 = 104 条
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -153,7 +171,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **1393 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **1560 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
