@@ -103,13 +103,14 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
 
         // 投影容器填充（0.5.4）：两个 tick 监听器自己按 projectionFill 开关门禁，
         // 未安装 litematica 时 getTemplateSnapshot 恒 null（不会崩）。
-        // 与 quickcraft 同时安装时桥接层强制关闭，避免两套逻辑抢同一次右键。
+        // 与 quickcraft 同时安装时只提醒可能双份响应右键，绝不替玩家关掉自己的开关
+        // （0.5.4 实测：强制让位会让「两个都装」时 neko-client 完全没反应）。
         QuickContainerCopy copy = new QuickContainerCopy();
         copy.onInitializeClient();
         QuickLitematicaContainerAutofill autofill = new QuickLitematicaContainerAutofill();
         autofill.onInitializeClient();
         if (FabricLoader.getInstance().isModLoaded("quickcraft")) {
-            LOGGER.warn("[neko-client] 检测到 quickcraft 与本项目同时安装 ⇒ 投影容器填充已强制关闭，请卸载其中一个。");
+            LOGGER.warn("[neko-client] 检测到 quickcraft 与本项目同时安装：两套投影填充可能同时响应右键，请按各自的开关取舍；本项目不再自动让位。");
         }
 
         // 接收端：同一个 id 已被别人注册过时返回 false（后注册者覆盖前者）。

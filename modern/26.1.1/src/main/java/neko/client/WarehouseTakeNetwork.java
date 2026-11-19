@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * 「热键 + 手持物 → 从虚空仓库取货到背包」的客户端收发管家。
@@ -55,6 +56,10 @@ public final class WarehouseTakeNetwork {
     /** 撞 THROTTLED 时的重试次数（最多 2 次，避免无限退避） */
     private static volatile int retries = 0;
     private static volatile boolean initialized = false;
+    /** 谁在等这次回执：手持热键为 null；投影填充的补料链会传自己的回调 */
+    private static volatile Consumer<Boolean> completion = null;
+    /** 填充补料是后台行为，不抢玩家的动作栏（失败由填充链路自己报） */
+    private static volatile boolean silentRequest = false;
 
     private WarehouseTakeNetwork() {
     }
@@ -106,22 +111,45 @@ public final class WarehouseTakeNetwork {
             InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_no_item");
             return false;
         }
+        return beginForItem(client, held, false, null);
+    }
+
+    /**
+     * 指定物品取货（0.5.4 投影填充的缺料续填用）。
+     *
+     * <p>与 {@link #begin(Minecraft)} 共用同一条 {@code printer_take} 通道和成功判据，
+     * 只是不读手持物、不刷动作栏，并在真正「取到了」时回调调用方。<b>回调在回执
+     * 已结算、状态已清空之后才调用</b>，因此回调里可以立刻发下一个请求。</p>
+     *
+     * @return {@code true} = 请求已发出；false 时<b>不</b>回调（调用方看返回值即可）
+     */
+    public static boolean beginForItem(Minecraft client, ItemStack sample,
+                                       boolean silent, Consumer<Boolean> onResult) {
+        if (client == null || client.player == null || sample == null || sample.isEmpty()) {
+            return false;
+        }
         if (!isSupported()) {
-            InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_unsupported");
+            if (!silent) {
+                InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_unsupported");
+            }
             return false;
         }
         if (activeNonce != 0) {
-            InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_busy");
+            if (!silent) {
+                InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_busy");
+            }
             return false;
         }
-        String id = BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+        String id = BuiltInRegistries.ITEM.getKey(sample.getItem()).toString();
         int nonce = WarehouseTakeModel.nextNonce(nextNonce);
         nextNonce = nonce;
 
-        heldBefore = countInInventory(client, held);
+        heldBefore = countInInventory(client, sample);
         activeItemId = id;
         activeNonce = nonce;
         latestStatus = WarehouseTakeModel.STATUS_NO_REPLY;
+        completion = onResult;
+        silentRequest = silent;
         sentAt = System.currentTimeMillis();
         retries = 0;
         try {
@@ -129,10 +157,18 @@ public final class WarehouseTakeNetwork {
         } catch (RuntimeException failed) {
             forget();
             LOGGER.warn("[虚空仓库补货] 发包失败：{}", failed.toString());
-            InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_failed");
+            if (!silent) {
+                InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_failed");
+            }
             return false;
         }
         return true;
+    }
+
+    private static void finishRequest(Consumer<Boolean> callback, boolean result) {
+        if (callback != null) {
+            callback.accept(result);
+        }
     }
 
     private static void receive(PrinterTakeResultPayload payload, ClientPlayNetworking.Context context) {
@@ -151,9 +187,13 @@ public final class WarehouseTakeNetwork {
         int status = latestStatus;
         if (status == WarehouseTakeModel.STATUS_NO_REPLY) {
             if (System.currentTimeMillis() - sentAt > WarehouseTakeModel.REPLY_TIMEOUT_MS) {
-                InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_no_reply");
+                if (!silentRequest) {
+                    InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_no_reply");
+                }
                 LOGGER.warn("[虚空仓库补货] nonce={} 超时无回执（{}）", nonce, activeItemId);
+                Consumer<Boolean> callback = completion;
                 forget();
+                finishRequest(callback, false);
             }
             return;
         }
@@ -165,7 +205,7 @@ public final class WarehouseTakeNetwork {
         // 成功判据取交集：服务端 OK + 背包真的变多
         boolean delivered = WarehouseTakeModel.delivered(status, heldBefore,
                 countInInventory(client, stackOf(activeItemId)));
-        if (!delivered) {
+        if (!delivered && !silentRequest) {
             String key = WarehouseTakeModel.hintKey(status);
             if (key != null) {
                 InfoUtils.printActionbarMessage(key);
@@ -174,7 +214,10 @@ public final class WarehouseTakeNetwork {
                 LOGGER.warn("[虚空仓库补货] nonce={} 重试 2 次仍撞限流", nonce);
             }
         }
+        // 🔴 先清空本次状态再回调：回调里常常立刻发下一个补料请求
+        Consumer<Boolean> callback = completion;
         forget();
+        finishRequest(callback, delivered);
     }
 
     /** 撞限流后退避重发（same nonce，回执配对不变） */
@@ -216,12 +259,20 @@ public final class WarehouseTakeNetwork {
         return count;
     }
 
-    /** 作废当前请求（换世界 / 断线 / 收尾） */
+    /** 作废当前请求（换世界 / 断线 / 收尾）；填充补料链取消时只作废自己的请求 */
     public static void forget() {
         activeNonce = 0;
         latestStatus = WarehouseTakeModel.STATUS_NO_REPLY;
         activeItemId = null;
         heldBefore = 0;
         retries = 0;
+        completion = null;
+        silentRequest = false;
+    }
+
+    public static void cancelFillRequest() {
+        if (completion != null) {
+            forget();
+        }
     }
 }

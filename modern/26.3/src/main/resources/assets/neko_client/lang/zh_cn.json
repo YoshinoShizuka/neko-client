@@ -62,10 +62,14 @@
   "neko_client.fill.message.container_copy.target_open_timeout": "虚空仓库投影填充: 打开目标容器超时",
   "neko_client.fill.message.container_copy.template_type_mismatch": "虚空仓库投影填充: 当前容器和模板类型不匹配",
   "neko_client.fill.message.container_copy.temporary_stash_restore_failed": "虚空仓库投影填充: 无法取回临时暂存的背包物品",
+  "neko_client.fill.message.container_copy.warehouse_empty": "虚空仓库投影填充: 仓库里没有缺的物品，已停止补料",
+  "neko_client.fill.message.container_copy.warehouse_timeout": "虚空仓库投影填充: 仓库补料超时",
   "neko_client.fill.message.litematica_autofill.no_container_content": "虚空仓库投影填充: 当前位置没有可用的投影容器内容",
   "neko_client.fill.message.separator": "，",
   "neko_client.config.name.projectionFill": "投影容器填充",
   "neko_client.config.comment.projectionFill": "右键投影容器后按投影内容填充；默认关闭",
   "neko_client.config.name.continuousFill": "连续填充热键",
-  "neko_client.config.comment.continuousFill": "按住此键连续填充多个投影容器；默认未绑定"
+  "neko_client.config.comment.continuousFill": "按一下启用连续填充、再按一下关闭；默认未绑定",
+  "message.neko_client.continuous_fill_on": "连续填充：开（右键投影容器开始跨容器填充）",
+  "message.neko_client.continuous_fill_off": "连续填充：关"
 }

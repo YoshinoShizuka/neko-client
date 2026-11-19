@@ -16,9 +16,15 @@ public final class QuickCraftKeyBindings {
     }
 
     public static boolean isHotkeyDown(Minecraft client, IKeybind keybind, KeyMapping vanillaFallback) {
-        if (keybind == null) { return false; }
-        if (vanillaFallback != null && !vanillaFallback.isUnbound()
-                && keybind.matches(KeybindMulti.getKeyCode(vanillaFallback))) {
+        // ① 玩家热键回调驱动的开关：任意绑定键都能用（26.x 的 isKeybindHeld 不可信）
+        if (ContinuousFillControl.isArmed()) {
+            return true;
+        }
+        // ② 原有兼容：热键恰好绑成 keyUse 时，直接读原版按键状态
+        if (keybind == null || vanillaFallback == null || vanillaFallback.isUnbound()) {
+            return false;
+        }
+        if (keybind.matches(KeybindMulti.getKeyCode(vanillaFallback))) {
             return vanillaFallback.isDown();
         }
         return false;

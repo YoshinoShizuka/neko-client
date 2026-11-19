@@ -4,6 +4,7 @@ package neko.client.fill;
 
 import static neko.client.fill.QuickContainerCopySources.*;
 
+import neko.client.WarehouseTakeNetwork;
 import neko.client.fill.compat.QuickShulkerConnection;
 import neko.client.fill.config.QuickCraftConfigs;
 import neko.client.fill.litematica.QuickLitematicaContainerAutofill;
@@ -82,6 +83,11 @@ public final class QuickContainerCopy implements ClientModInitializer {
     private static ContinuousFillTask continuousTask;
     private static TargetInteraction suppressedContinuousTarget;
     private static boolean suppressContainerVerifierRemember;
+    /** 缺料自动向虚空仓库取货：异步回执期间挂在这里，下一 tick 再续填 */
+    private static WarehouseSupplyState warehouseSupply;
+    private static long warehouseSupplyStartedAt;
+    private static final int WAREHOUSE_SUPPLY_ROUNDS = 3;
+    private static final long WAREHOUSE_SUPPLY_TIMEOUT_MS = 30_000L;
 
     @Override
     public void onInitializeClient() {
@@ -163,6 +169,11 @@ public final class QuickContainerCopy implements ClientModInitializer {
             QuickContainerFillStatus.finish(client, target, result.issueCount());
             if (result.isComplete()) {
                 suppressContinuousFillAfterSingleAction(client, target, type);
+            } else {
+                SuccessMessage success = SuccessMessage.of(
+                        "neko_client.fill.message.container_copy.projection_filled", type.displayName());
+                beginWarehouseSupply(client, result.missingDemands(), false, target, type,
+                        recordedTemplate, success, false, 0);
             }
         } finally {
             recordedTemplate = previousTemplate;
@@ -181,6 +192,25 @@ public final class QuickContainerCopy implements ClientModInitializer {
             pendingFillTarget = null;
             pendingTicks = 0;
             stopContinuousTask(client, false, null);
+            WarehouseFillSupply.cancel();
+            ContinuousFillControl.disarm();
+            warehouseSupply = null;
+            return;
+        }
+
+        // 补料请求在飞时暂缓一切填充动作：回执到了再重填一次模板
+        if (warehouseSupply != null) {
+            if (System.currentTimeMillis() - warehouseSupplyStartedAt > WAREHOUSE_SUPPLY_TIMEOUT_MS) {
+                warehouseSupply = null;
+                WarehouseFillSupply.cancel();
+                sendStatusMessage(client, Component.translatable(
+                        "neko_client.fill.message.container_copy.warehouse_timeout"));
+                if (continuousTask != null) {
+                    stopContinuousTask(client, true, null);
+                }
+            } else if (warehouseSupply.resolved) {
+                resumeAfterWarehouseSupply(client);
+            }
             return;
         }
 
@@ -355,6 +385,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
             case WAIT_SOURCE_SCREEN -> waitForSourceShulker(client);
             case EXTRACT_SOURCE -> extractFromSourceShulker(client);
             case REOPEN_DELAY -> waitBeforeReopen();
+            case WAIT_WAREHOUSE -> { /* onClientTick 统一等回执，这里无事可做 */ }
         }
     }
 
@@ -455,6 +486,15 @@ public final class QuickContainerCopy implements ClientModInitializer {
         if (!continuousTask.template.useQuickShulker()
                 || result.missingDemands().isEmpty()
                 || !canUseQuickShulkerOpenPacket()) {
+            // 🔴 缺料先问虚空仓库，不要直接停：这是 0.5.4 实测「缺的物品不会主动取」的修复点
+            if (beginWarehouseSupply(client, result.missingDemands(), true,
+                    continuousTask.target.hitResult(), continuousTask.target.type(),
+                    continuousTask.template.recordedTemplate(), continuousTask.template.successMessage(),
+                    continuousTask.template.useQuickShulker(), 0)) {
+                continuousTask.stage = ContinuousStage.WAIT_WAREHOUSE;
+                continuousTask.ticks = 0;
+                return;
+            }
             QuickContainerFillStatus.finish(client, continuousTask.target.hitResult(), result.issueCount());
             stopContinuousTask(client, true, result.message(continuousTask.template.successMessage()));
             return;
@@ -657,6 +697,117 @@ public final class QuickContainerCopy implements ClientModInitializer {
         }
         if (message != null) {
             sendStatusMessage(client, message);
+        }
+    }
+
+    /**
+     * 缺料 → 逐个向虚空仓库要货。返回 false = 这条通道用不了（对端旧 / 规则没开），
+     * 调用方照原逻辑报缺料即可。
+     */
+    private static boolean beginWarehouseSupply(Minecraft client,
+                                                List<MissingDemand> demands,
+                                                boolean continuous,
+                                                HitResult target,
+                                                SupportedContainerType type,
+                                                RecordedContainerTemplate template,
+                                                SuccessMessage success,
+                                                boolean useQuickShulker,
+                                                int rounds) {
+        if (client == null || client.player == null || demands == null || demands.isEmpty()
+                || rounds >= WAREHOUSE_SUPPLY_ROUNDS
+                || !QuickCraftConfigs.isQuickContainerCopyEnabled()
+                || !WarehouseTakeNetwork.isSupported()) {
+            return false;
+        }
+        List<String> ids = new ArrayList<>();
+        for (MissingDemand demand : demands) {
+            if (demand.template().isEmpty()) {
+                continue;
+            }
+            ids.add(BuiltInRegistries.ITEM.getKey(demand.template().getItem()).toString());
+        }
+        if (ids.isEmpty()) {
+            return false;
+        }
+        WarehouseSupplyState state = new WarehouseSupplyState(
+                continuous, target, type, template, success, useQuickShulker, rounds);
+        warehouseSupply = state;
+        warehouseSupplyStartedAt = System.currentTimeMillis();
+        boolean started = WarehouseFillSupply.begin(client, ids, delivered -> {
+            state.resolved = true;
+            state.delivered = delivered;
+        });
+        if (!started) {
+            warehouseSupply = null;
+            return false;
+        }
+        return true;
+    }
+
+    /** 回执结算后重填一次模板：货真到背包了才继续，否则按原样报缺料 */
+    private void resumeAfterWarehouseSupply(Minecraft client) {
+        WarehouseSupplyState state = warehouseSupply;
+        warehouseSupply = null;
+        if (state == null || client == null || client.player == null) {
+            return;
+        }
+        if (!state.delivered) {
+            if (state.continuous && continuousTask != null) {
+                QuickContainerFillStatus.finish(client, state.target, 1);
+                stopContinuousTask(client, true, Component.translatable(
+                        "neko_client.fill.message.container_copy.warehouse_empty"));
+            } else {
+                sendStatusMessage(client, Component.translatable(
+                        "neko_client.fill.message.container_copy.warehouse_empty"));
+            }
+            return;
+        }
+
+        AbstractContainerMenu handler = getOpenHandledContainer(client);
+        if (handler == null || !isSupportedHandlerForType(handler, state.type)) {
+            if (state.continuous && continuousTask != null) {
+                continuousTask.stage = ContinuousStage.OPEN_TARGET;
+                continuousTask.ticks = 0;
+            }
+            return;
+        }
+
+        RecordedContainerTemplate previousTemplate = recordedTemplate;
+        boolean previousQuickShulkerSources = allowQuickShulkerSources;
+        recordedTemplate = state.template;
+        allowQuickShulkerSources = state.useQuickShulker;
+        FillResult result;
+        try {
+            result = applyTemplate(client, handler, state.success, false);
+        } finally {
+            recordedTemplate = previousTemplate;
+            allowQuickShulkerSources = previousQuickShulkerSources;
+        }
+        QuickContainerFillStatus.progress(client, state.target, result.issueCount());
+
+        if (result.isComplete()) {
+            QuickContainerFillStatus.finish(client, state.target, 0);
+            if (state.continuous && continuousTask != null) {
+                stopContinuousTask(client, true, state.success.text());
+            } else {
+                sendStatusMessage(client, state.success.text());
+            }
+            return;
+        }
+        if (beginWarehouseSupply(client, result.missingDemands(), state.continuous,
+                state.target, state.type, state.template, state.success,
+                state.useQuickShulker, state.rounds + 1)) {
+            if (state.continuous && continuousTask != null) {
+                continuousTask.stage = ContinuousStage.WAIT_WAREHOUSE;
+                continuousTask.ticks = 0;
+            }
+            return;
+        }
+        QuickContainerFillStatus.finish(client, state.target, result.issueCount());
+        if (state.continuous && continuousTask != null) {
+            stopContinuousTask(client, true, result.message(state.success));
+        } else {
+            sendStatusMessage(client, result.message(state.success));
         }
     }
 
@@ -2535,7 +2686,8 @@ public final class QuickContainerCopy implements ClientModInitializer {
         FILL_TARGET,
         WAIT_SOURCE_SCREEN,
         EXTRACT_SOURCE,
-        REOPEN_DELAY
+        REOPEN_DELAY,
+        WAIT_WAREHOUSE
     }
 
     private static final class ContinuousFillTask {
@@ -2554,6 +2706,30 @@ public final class QuickContainerCopy implements ClientModInitializer {
         private ContinuousFillTask(TargetInteraction target, ContinuousTemplate template) {
             this.target = target;
             this.template = template;
+        }
+    }
+
+    private static final class WarehouseSupplyState {
+        private final boolean continuous;
+        private final HitResult target;
+        private final SupportedContainerType type;
+        private final RecordedContainerTemplate template;
+        private final SuccessMessage success;
+        private final boolean useQuickShulker;
+        private final int rounds;
+        private boolean resolved;
+        private boolean delivered;
+
+        private WarehouseSupplyState(boolean continuous, HitResult target, SupportedContainerType type,
+                                     RecordedContainerTemplate template, SuccessMessage success,
+                                     boolean useQuickShulker, int rounds) {
+            this.continuous = continuous;
+            this.target = target;
+            this.type = type;
+            this.template = template;
+            this.success = success;
+            this.useQuickShulker = useQuickShulker;
+            this.rounds = rounds;
         }
     }
 

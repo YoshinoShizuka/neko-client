@@ -3,7 +3,6 @@
 package neko.client.fill.config;
 
 import fi.dy.masa.malilib.config.options.ConfigHotkey;
-import net.fabricmc.loader.api.FabricLoader;
 import neko.client.SearchConfig;
 import java.util.List;
 
@@ -11,8 +10,16 @@ import java.util.List;
 public final class QuickCraftConfigs {
     private QuickCraftConfigs() { }
 
+    /**
+     * 🔴 不再因为 quickcraft 也在场就把自己关掉。
+     *
+     * <p>0.5.4 初版在这里写了 {@code !isModLoaded("quickcraft")}，玩家实测
+     * 「两个一起装时 neko-client 的填充完全没反应」——共存是玩家自己的选择，
+     * 模组应当各读各的开关，而不是替玩家决定谁让位。入口仍会 warn 提示可能
+     * 双份响应右键，但绝不静默关功能。</p>
+     */
     private static boolean enabled() {
-        return SearchConfig.isProjectionFillEnabled() && !FabricLoader.getInstance().isModLoaded("quickcraft");
+        return SearchConfig.isProjectionFillEnabled();
     }
 
     public static boolean isQuickContainerCopyEnabled() { return enabled(); }

@@ -54,13 +54,15 @@
 安装 Litematica + 打开 projectionFill
   → 右键投影中的容器（箱子 / 木桶 / 漏斗 / 发射器 / 熔炉 …）
   → 打开真实容器后，客户端按投影 NBT 逐槽位点击填充
-  → 关箱；绑了 continuousFill 时按住可连续跨容器
+  → 缺的物品自动从虚空仓库取到背包，取到后续填
+  → 关箱；按一下 continuousFill 启用后可连续跨容器，再按一下关闭
 ```
 
 - **默认关闭**：这是新功能，不能让升级后的老玩家突然发现右键变了。`projectionFill` 关着时相关 tick 监听器直接空转。
 - **Litematica 是可选依赖**：没装时读不到投影，右键行为原样；26.1.1 借用 26.1.2 的 Litematica 编译，不会因缺类崩溃。
 - **1.21.11 的降级**：右键自动填充可用；连续填充依赖 26.2+ 的界面压制注入点，1.21.11 没有对应混入，故该子功能在此版本不启用（不硬挂 mixin，以免启动即崩）。
-- **与 quickcraft 互斥**：两个 mod 同时安装时本功能强制关闭，避免两套逻辑抢同一次右键。
+- **与 quickcraft 共存**：两个 mod 同时安装时各读各的开关，本模组**不再自动让位**；日志只提示可能双份响应右键，由玩家自己取舍。
+- **缺料自动补货**：模板缺的物品会通过 `printer_take` 逐种从虚空仓库取到背包（需要 carpet-Neko-Addition 1.0.17+ 且 `voidWarehouseRestock` 开启）；回执确认背包真的变多后才续填，服务端不支持时按原样报缺料。
 - **范围**：批次 A 只搬填充主路径；容器锁、材料自动收集、Quick Shulker 桥接、3D 预览和验证器 UI 都用 stub 顶住，后续批次再补。
 
 ## 安装
@@ -104,7 +106,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | 取满组合键 / `fillCombo` | `LEFT_CONTROL,LEFT_ALT,BUTTON_2` | **不是开关，是手势本身**：按住它再点格子。只认绑定的那个鼠标键，未绑定的键一律不触发 |
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面 |
 | 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增；0.5.0 起带图标/滚动/搜索；随地可用，不必开着仓库） |
-| 连续填充 / `continuousFill` | **未绑定** | 按住再右键，连续跨多个投影容器填充；建议绑 `BUTTON_2` |
+| 连续填充 / `continuousFill` | **未绑定** | 按一下启用连续填充、再按一下关闭（**不需要按住**）；任意绑定键都可用 |
 
 三条开关热键默认留空，是因为 `H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车。`fillCombo` 是唯一给默认值的例外 —— 它是**手势本身**，留空等于把「可配置化」做成功能删除。
 
@@ -171,7 +173,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **1560 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **121 条单测 + 1640 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 

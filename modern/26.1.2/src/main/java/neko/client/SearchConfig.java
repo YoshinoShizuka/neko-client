@@ -151,7 +151,14 @@ public final class SearchConfig implements IConfigHandler {
     public static final ConfigHotkey WAREHOUSE_TAKE = new ConfigHotkey(
             "warehouseTake", SearchConfigJson.DEFAULT_KEY_WAREHOUSE_TAKE, HOTKEY_SETTINGS).apply(PREFIX);
 
-    /** 连续填充：按住此键再右键，可跨容器连续填充（默认未绑定） */
+    /**
+     * 连续填充热键（默认未绑定）。<b>按一下启用、再按一下关闭</b>，不要求按住。
+     *
+     * <p>0.5.4 初版沿用 quickcraft 的「按住」判据，26.x 的 malilib 无法可靠回答
+     * 「任意键现在按着没有」，绑 KP_9 之类就永远不触发。现在由热键 PRESS 回调
+     * 切换 {@link neko.client.fill.ContinuousFillControl} 的纯状态，右键投影容器
+     * 进入连续填充，直到再次按热键或目标填满。</p>
+     */
     public static final ConfigHotkey CONTINUOUS_FILL = new ConfigHotkey(
             "continuousFill", SearchConfigJson.DEFAULT_KEY_CONTINUOUS_FILL, HOTKEY_SETTINGS).apply(PREFIX);
 
