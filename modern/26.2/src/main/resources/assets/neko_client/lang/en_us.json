@@ -15,6 +15,8 @@
   "neko_client.config.comment.openContainerMaterials": "Opens the per-item totals of everything the schematic's containers ask for. \"Total\" comes from each container's NBT, \"available\" = inventory + void warehouse, \"missing\" = the difference.\nNo container needs to be open and nothing is being filled; the warehouse lookup is read-only and never consumes stock.",
   "neko_client.materials.name": "Container fill totals",
   "neko_client.materials.title": "Container fill totals (inventory + void warehouse)",
+  "neko_client.materials.button": "Containers",
+  "neko_client.materials.button.hover": "Toolbar button: open Container fill totals — everything inside the schematic containers, vs inventory + void warehouse",
   "neko_client.gui.title": "NekoCarpet Settings",
   "neko_client.gui.tab.generic": "Generic",
   "neko_client.gui.tab.hotkeys": "Hotkeys",

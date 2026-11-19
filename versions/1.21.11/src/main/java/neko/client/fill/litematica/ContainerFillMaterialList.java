@@ -62,6 +62,17 @@ public final class ContainerFillMaterialList extends MaterialListBase {
         QuickClientScreenAccess.setScreen(client, new GuiMaterialList(list));
     }
 
+    /**
+     * 从界面按钮进来：按钮回调里没有 client，自己取。
+     *
+     * <p>给材料列表工具栏那个「容器材料」混入用（
+     * {@code neko.client.mixin.GuiMaterialListButtonMixin}）—— 混入只依赖本方法，
+     * 不碰 {@code Minecraft} 之外任何会跨版本改名的 API。</p>
+     */
+    public static void openCurrent() {
+        open(Minecraft.getInstance());
+    }
+
     @Override
     public String getName() {
         return StringUtils.translate(NAME_KEY);
