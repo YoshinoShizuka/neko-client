@@ -13,6 +13,7 @@
 5. **聊天静音开关**（0.5.2）—— 打开后，本客户端不再显示虚空仓库发来的**任何**聊天提示（含配方本那些不带前缀的续行）。只管显示，服务端照常发、别人照常看。
 6. **仓库补货**（0.5.3）—— 投影容器填充缺料时自动从虚空仓库取货；不再提供独立热键选项。
 7. **投影容器填充**（0.5.4，批次 A）—— 装了 Litematica 时，右键投影里的箱子/漏斗/发射器等容器，打开后按投影内容**逐格填充**；缺料自动接仓库补货。默认关闭，与 quickcraft 共存时各读各的开关。
+8. **材料来源计入虚空仓库**（0.5.5）—— 装了 Litematica 时，投影材料列表的「已有」把**虚空仓库里的库存**也算进去（只读查询，缺失数量不变）。默认关闭。
 
 ![Side](https://img.shields.io/badge/side-%E7%BA%AF%E5%AE%A2%E6%88%B7%E7%AB%AF-informational) ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.x-2ea043)
 
@@ -64,14 +65,31 @@
 - **缺料自动补货**：模板缺的物品会通过 `printer_take` 逐种从虚空仓库取到背包（需要 carpet-Neko-Addition 1.0.17+ 且 `voidWarehouseRestock` 开启）；回执确认背包真的变多后才续填，服务端不支持时按原样报缺料。
 - **范围**：批次 A 只搬填充主路径；容器锁、材料自动收集、Quick Shulker 桥接、3D 预览和验证器 UI 都用 stub 顶住，后续批次再补。
 
+## 材料来源计入虚空仓库（0.5.5）
+
+```
+打开投影材料列表（Litematica）
+  → 每行「已有」= 背包里的 + 虚空仓库里的同种物品
+  → 只读：一个字节都不写回仓库，缺失数量（缺失 = 需要 − 已有）原样由 Litematica 自己算
+```
+
+- **改的是原生材料列表**：直接给 `MaterialListEntry#getCountAvailable` 注入，所以投影材料页、容器材料页、材料 HUD 三处**同时生效**，不需要额外界面。缺失数量是 `final` 字段、不可改 —— 本功能只让「已有」变大，「缺失」随之自然变小。
+- **按物品合计所有变体**：仓库取消了 NBT 限制后，同一种物品可能散在多格（附魔书、药水、改过名的装备各一格）。材料列表是按物品统计的，所以这些格子必须**加起来** —— 否则「仓库里有两百本附魔书」会显示成 0。
+- **只读查询**：走 `carpet_neko_addition:printer_query` 这条与 `litematica-printer` 相同的通道，服务端只调读方法，不扣库存、不动背包。
+- **需求驱动**：只有材料列表真的在算「已有」时才发包（最近 200 tick 内被问过），节奏 5 秒一次；界面关掉就停。没人在看时这条通道一个包都不发。
+- **与 litematica-printer 共存**：Fabric 的全局接收器每个通道只能有一个，先注册者独占。检测到 printer 就**不抢注册**，直接反射读它已经同步好的 `VoidWarehouseMaterialCache`；两个模组的材料列表都能拿到数字，谁也不把谁打成 0。
+- **服务端要求**：`carpet-Neko-Addition` 1.0.17+，且 `voidWarehouse` + `voidWarehouseRestock` 都开着（查询与取货同一道闸门）。任一条不满足时服务端回「规则没开」，客户端清空快照、退避 60 秒再试。
+- **没装 Litematica**：整条注入跳过（`@Pseudo` + 独立的 `required: false` mixin 配置），客户端照常启动。
+- **与服务端遍历优化配套**（carpet 1.0.17 第二十三次原地替换）：`printer_query` 不再每次把整个仓库摊成一张 `id → 数量` 的表，而是拿请求 id 直接查仓库增量维护的「物品 → 装它的那些格」桶索引。4000 格仓库实测：100 个 id 的材料表 165 µs → 19 µs（8.5×），300 个 id 2.6×；id 再多就由两边共有的注册表解析成本主导（601 个 id 约 1.5×）。
+
 ## 安装
 
 mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一个 jar：
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.4.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.5.4.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.5.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.5.5.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
@@ -95,6 +113,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | `fillGesture` | `true` | 取满手势退回原版「取 1 个」，搜索框照常可用（组合键还绑着也不响应） |
 | `silenceChat`（0.5.2） | `false` | 打开后隐藏虚空仓库的全部聊天提示（见下节）；关掉后新消息立刻恢复 |
 | `projectionFill`（0.5.4） | `false` | 打开后右键投影容器会按投影内容填充；关闭时右键行为完全原样 |
+| `useVoidWarehouseMaterials`（0.5.5） | `false` | 打开后材料列表的「已有」计入虚空仓库；关闭时完全按原版 + 背包算 |
 
 | 热键（配置界面里的名字） | 默认键 | 说明 |
 | --- | --- | --- |
@@ -161,7 +180,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 26.3 共 111 条：配置 27 + 组合键 18 + 配方本 43 + 聊天静音 9 + 仓库补货 7 + 填充状态/排队 6 + 提示语言 1
+.\gradlew.bat :modern:26.3:test        REM 26.3 共 117 条：配置 29 + 组合键 18 + 配方本 43 + 聊天静音 9 + 仓库补货 7 + 填充状态/排队 6 + 提示语言 1 + 材料计数 4
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -170,7 +189,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **122 条单测（26.3 111 + common 11）+ 1650 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **128 条单测（26.3 117 + common 11）+ 1785 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 
