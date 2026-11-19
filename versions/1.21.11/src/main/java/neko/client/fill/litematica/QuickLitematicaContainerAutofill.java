@@ -2,6 +2,7 @@
 // Adapted for neko-client: package renamed; optional branches are stubbed.
 package neko.client.fill.litematica;
 
+import neko.client.WarehouseText;
 import neko.client.fill.QuickContainerCopy;
 import neko.client.fill.QuickClientScreenAccess;
 import neko.client.fill.QuickCraftKeyBindings;
@@ -183,7 +184,7 @@ public final class QuickLitematicaContainerAutofill implements ClientModInitiali
 
     private void sendStatusMessage(Minecraft client, Component message) {
         if (client.player != null) {
-            client.player.displayClientMessage(message, false);
+            client.player.displayClientMessage(WarehouseText.info(client, message), false);
         }
     }
 

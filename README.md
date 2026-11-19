@@ -161,7 +161,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 配置 25 + 组合键 18 + 配方本 43 + 聊天静音 9 + 仓库补货 7 + 投影填充配置 2 = 104 条
+.\gradlew.bat :modern:26.3:test        REM 26.3 共 111 条：配置 27 + 组合键 18 + 配方本 43 + 聊天静音 9 + 仓库补货 7 + 填充状态/排队 6 + 提示语言 1
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
@@ -170,7 +170,7 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
 - 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` 与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **121 条单测 + 1630 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **122 条单测（26.3 111 + common 11）+ 1650 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 

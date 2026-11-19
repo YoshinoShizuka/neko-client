@@ -5,6 +5,7 @@ package neko.client.fill;
 import static neko.client.fill.QuickContainerCopySources.*;
 
 import neko.client.WarehouseTakeNetwork;
+import neko.client.WarehouseText;
 import neko.client.fill.compat.QuickShulkerConnection;
 import neko.client.fill.config.QuickCraftConfigs;
 import neko.client.fill.litematica.QuickLitematicaContainerAutofill;
@@ -129,7 +130,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
         } else {
             return false;
         }
-        sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.recording", type.displayName()));
+        sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.recording", WarehouseText.key(type.displayName())));
         return true;
     }
 
@@ -294,7 +295,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
         suppressedContinuousTarget = null;
         continuousTask = new ContinuousFillTask(new TargetInteraction(hitResult, type), template);
         QuickContainerFillStatus.begin(client, hitResult);
-        sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.background_start", type.displayName()));
+        sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.background_start", WarehouseText.key(type.displayName())));
     }
 
     public static boolean canHandleContinuousContainerFillHotkey(Minecraft client) {
@@ -944,7 +945,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
 
         if (recordedTemplate == null || recordedTemplate.type != type) {
             QuickContainerFillStatus.stop(client, fillTarget, true);
-            sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.no_record_for_type", type.displayName()));
+            sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.no_record_for_type", WarehouseText.key(type.displayName())));
             closeCurrentScreen(client);
             return;
         }
@@ -995,7 +996,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
         }
 
         recordedTemplate = new RecordedContainerTemplate(type, templates, disabledStates);
-        sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.recorded", type.displayName()));
+        sendStatusMessage(client, Component.translatable("neko_client.fill.message.container_copy.recorded", WarehouseText.key(type.displayName())));
     }
 
     private FillResult applyTemplate(Minecraft client,
@@ -2670,7 +2671,7 @@ public final class QuickContainerCopy implements ClientModInitializer {
 
     private static void sendStatusMessage(Minecraft client, Component message) {
         if (client != null && client.player != null) {
-            client.player.sendOverlayMessage(message);
+            client.player.sendOverlayMessage(WarehouseText.info(client, message));
         }
     }
 
@@ -2862,7 +2863,14 @@ public final class QuickContainerCopy implements ClientModInitializer {
 
     private record SuccessMessage(String translationKey, Object[] args) {
         private static SuccessMessage of(String translationKey, Object... args) {
-            return new SuccessMessage(translationKey, args);
+            // 组件参数（目前都是容器名）走关键词色；数字/字符串保持正文色
+            Object[] styled = new Object[args.length];
+            for (int i = 0; i < args.length; i++) {
+                styled[i] = args[i] instanceof Component component
+                        ? WarehouseText.key(component)
+                        : args[i];
+            }
+            return new SuccessMessage(translationKey, styled);
         }
 
         private Component text() {
