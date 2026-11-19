@@ -51,6 +51,9 @@ final class SearchConfigJson {
     /** 打开「配方本」界面的热键（默认未绑定，与其它开关热键同一条理由：别抢字母键） */
     static final String DEFAULT_KEY_OPEN_RECIPES = "";
 
+    /** 打开「容器填充物合计」界面的热键（0.5.6，默认未绑定）。 */
+    static final String DEFAULT_KEY_OPEN_CONTAINER_MATERIALS = "";
+
     /**
      * 🔴 取满组合键<b>刻意给了默认值</b>（与上面三条相反，这是唯一例外）。
      *
@@ -95,13 +98,35 @@ final class SearchConfigJson {
                   String keyFillGesture,
                   String keyFillCombo,
                   String keyOpenGui,
-                  String keyOpenRecipes) {
+                  String keyOpenRecipes,
+                  String keyOpenContainerMaterials) {
+
+        /**
+         * 旧的 9 参写法：新热键默认未绑定。
+         *
+         * <p>留着这个重载不是偷懒 —— 单测和调用点几十处都按 9 个值构造，
+         * 每加一个热键就全改一遍，改错了还没人发现。</p>
+         */
+        Values(boolean searchBox,
+               boolean fillGesture,
+               boolean silenceChat,
+               boolean projectionFill,
+               String keySearchBox,
+               String keyFillGesture,
+               String keyFillCombo,
+               String keyOpenGui,
+               String keyOpenRecipes) {
+            this(searchBox, fillGesture, silenceChat, projectionFill, keySearchBox,
+                    keyFillGesture, keyFillCombo, keyOpenGui, keyOpenRecipes,
+                    DEFAULT_KEY_OPEN_CONTAINER_MATERIALS);
+        }
 
         static Values defaults() {
             return new Values(DEFAULT_SEARCH_BOX, DEFAULT_FILL_GESTURE, DEFAULT_SILENCE_CHAT,
                     DEFAULT_PROJECTION_FILL,
                     DEFAULT_KEY_SEARCH_BOX, DEFAULT_KEY_FILL_GESTURE,
-                    DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES);
+                    DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES,
+                    DEFAULT_KEY_OPEN_CONTAINER_MATERIALS);
         }
 
         /**
@@ -136,7 +161,8 @@ final class SearchConfigJson {
                 readKey(json, "keyFillGesture", DEFAULT_KEY_FILL_GESTURE),
                 readKeyKeepingEmpty(json, "keyFillCombo", DEFAULT_KEY_FILL_COMBO),
                 readKey(json, "keyOpenGui", DEFAULT_KEY_OPEN_GUI),
-                readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES));
+                readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES),
+                readKey(json, "keyOpenContainerMaterials", DEFAULT_KEY_OPEN_CONTAINER_MATERIALS));
     }
 
     /**
@@ -160,12 +186,14 @@ final class SearchConfigJson {
                   "keyFillGesture": "%s",
                   "keyFillCombo": "%s",
                   "keyOpenGui": "%s",
-                  "keyOpenRecipes": "%s"
+                  "keyOpenRecipes": "%s",
+                  "keyOpenContainerMaterials": "%s"
                 }
                 """.formatted(values.searchBox(), values.fillGesture(), values.silenceChat(),
                 values.projectionFill(),
                 values.keySearchBox(), values.keyFillGesture(), values.keyFillCombo(),
-                values.keyOpenGui(), values.keyOpenRecipes());
+                values.keyOpenGui(), values.keyOpenRecipes(),
+                values.keyOpenContainerMaterials());
     }
 
     /** 缺字段、类型不对（例如手改成字符串 {@code "false"}）一律回落到默认值 */

@@ -100,6 +100,9 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         // 仓库补货（0.5.3）：printer_take C2S + result S2C 的注册、回执接收、tick 推进
         // 全在 WarehouseTakeNetwork 里，入口只把两个版本的 registry 递进去。
         WarehouseTakeNetwork.init(c2s, s2c);
+        // 虚空仓库只读库存快照（0.5.6）：「容器填充物合计」界面的「已有」有一半来自这里。
+        // printer 在场时不抢接收器，直接读它同步好的缓存。
+        WarehouseStock.init(c2s, s2c);
 
         // 投影容器填充（0.5.4）：两个 tick 监听器自己按 projectionFill 开关门禁，
         // 未安装 litematica 时 getTemplateSnapshot 恒 null（不会崩）。

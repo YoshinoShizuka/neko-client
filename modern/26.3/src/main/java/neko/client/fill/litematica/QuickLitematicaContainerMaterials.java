@@ -66,6 +66,16 @@ public final class QuickLitematicaContainerMaterials {
         return readItems(nbt, registryLookup, false);
     }
 
+    /**
+     * 统计用读数：读不出来的槽位<b>跳过</b>，剩多少算多少。
+     *
+     * <p>替换 / 保存 / 验证必须走严格版（{@link #readItems}）—— 那里的判据是
+     * 「读不全就不许动」，统计只是给人看的总数，少一格比整张表空着有用。</p>
+     */
+    static List<ItemStack> readItemsForStatistics(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        return readItems(nbt, registryLookup, true);
+    }
+
     private static List<ItemStack> readItems(CompoundTag nbt, HolderLookup.Provider registryLookup, boolean allowPartial) {
         if (nbt == null || !nbt.contains("Items")) {
             return List.of();

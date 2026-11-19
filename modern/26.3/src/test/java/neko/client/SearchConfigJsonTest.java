@@ -291,6 +291,19 @@ class SearchConfigJsonTest {
     }
 
     @Test
+    @DisplayName("F5 容器填充物合计的热键往返不失真；老配置没有这个字段时留空")
+    void containerMaterialsHotkeyRoundTrips() {
+        SearchConfigJson.Values written = new SearchConfigJson.Values(
+                true, false, false, false, "", "", "LEFT_CONTROL,LEFT_ALT,BUTTON_2", "", "", "GRAVE");
+        SearchConfigJson.Values readBack = SearchConfigJson.parse(SearchConfigJson.render(written));
+        assertAll(
+                () -> assertEquals(written, readBack),
+                () -> assertEquals("GRAVE", readBack.keyOpenContainerMaterials()),
+                () -> assertEquals("",
+                        SearchConfigJson.parse("{\"keySearchBox\": \"H\"}").keyOpenContainerMaterials(),
+                        "老配置没有这一项时必须落成未绑定，不能猜一个键出来"));
+    }
+    @Test
     @DisplayName("F4 模板里的热键是带引号的字符串；未绑定时落成空串而不是 null")
     void templateQuotesHotkeys() {
         String bound = renderWith(true, true, "H", "J", "V", "BUTTON_1");

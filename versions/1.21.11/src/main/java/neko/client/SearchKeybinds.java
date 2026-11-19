@@ -10,6 +10,9 @@ import fi.dy.masa.malilib.hotkeys.KeyAction;
 import fi.dy.masa.malilib.util.InfoUtils;
 import fi.dy.masa.malilib.util.StringUtils;
 
+import net.minecraft.client.Minecraft;
+import neko.client.fill.litematica.ContainerFillMaterialList;
+
 /**
  * 把 malilib 的配置对象接到实际行为上（照 MiniHUD 的写法）。
  *
@@ -52,6 +55,8 @@ public final class SearchKeybinds {
                 "message.neko_client.fill_off"));
         SearchConfig.OPEN_GUI.getKeybind().setCallback(new OpenGuiCallback());
         SearchConfig.OPEN_RECIPES.getKeybind().setCallback(new OpenRecipesCallback());
+        SearchConfig.OPEN_CONTAINER_MATERIALS.getKeybind()
+                .setCallback(new OpenContainerMaterialsCallback());
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -134,6 +139,26 @@ public final class SearchKeybinds {
                 return false;
             }
             GuiBase.openGui(new SearchConfigGui());
+            return true;
+        }
+    }
+
+    /** 打开「容器填充物合计」界面：整张原理图的容器需求 vs 背包 + 虚空仓库 */
+    private static final class OpenContainerMaterialsCallback implements IHotkeyCallback {
+
+        @Override
+        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
+            if (action != KeyAction.PRESS) {
+                return false;
+            }
+            if (SearchClientState.isSearchFocused()) {
+                return false;
+            }
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.level == null || client.player == null) {
+                return false;
+            }
+            ContainerFillMaterialList.open(client);
             return true;
         }
     }

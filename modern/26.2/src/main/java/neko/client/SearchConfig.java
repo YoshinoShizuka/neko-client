@@ -143,6 +143,17 @@ public final class SearchConfig implements IConfigHandler {
             "openRecipes", SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES, HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
+     * 打开「容器填充物合计」界面的热键（0.5.6，默认未绑定）。
+     *
+     * <p>这是这个功能唯一的入口：整张原理图所有容器的填充物合计，
+     * 对照背包 + 虚空仓库看还缺多少。不依赖是否开着某个容器，
+     * 也不依赖是否正在填充。</p>
+     */
+    public static final ConfigHotkey OPEN_CONTAINER_MATERIALS = new ConfigHotkey(
+            "openContainerMaterials", SearchConfigJson.DEFAULT_KEY_OPEN_CONTAINER_MATERIALS,
+            HOTKEY_SETTINGS).apply(PREFIX);
+
+    /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
@@ -152,7 +163,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
-                    FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
+                    FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -170,7 +181,7 @@ public final class SearchConfig implements IConfigHandler {
      * 「取满」开关只回答开不开，<b>按哪个键</b>在这一页。</p>
      */
     public static final List<IHotkey> GUI_HOTKEYS =
-            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES);
+            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS);
 
     /**
      * 🔴 把开关热键的「切换提示」也翻成中文。
@@ -227,6 +238,7 @@ public final class SearchConfig implements IConfigHandler {
             FILL_COMBO.setHotkeyStringValue(values.keyFillCombo());
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
+            OPEN_CONTAINER_MATERIALS.setHotkeyStringValue(values.keyOpenContainerMaterials());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -244,7 +256,8 @@ public final class SearchConfig implements IConfigHandler {
                 box.getRight(), fill.getRight(),
                 FILL_COMBO.getHotkeyStringValue(),
                 OPEN_GUI.getHotkeyStringValue(),
-                OPEN_RECIPES.getHotkeyStringValue()));
+                OPEN_RECIPES.getHotkeyStringValue(),
+                OPEN_CONTAINER_MATERIALS.getHotkeyStringValue()));
 
         Path path = file();
         try {
