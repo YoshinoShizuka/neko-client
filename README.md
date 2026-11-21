@@ -12,7 +12,7 @@
 4. **独立开关 + 可自定义热键** —— 两个功能各一套，由 **malilib**（MiniHUD / Litematica 那套）管，设置落 `config/neko-client.json`。
 5. **聊天静音开关**（0.5.2）—— 打开后，本客户端不再显示虚空仓库发来的**任何**聊天提示（含配方本那些不带前缀的续行）。只管显示，服务端照常发、别人照常看。
 6. **仓库补货**（0.5.3）—— 投影容器填充缺料时自动从虚空仓库取货；不再提供独立热键选项。
-7. **投影容器填充**（0.5.4，批次 A）—— 装了 Litematica 时，右键投影里的箱子/漏斗/发射器等容器，打开后按投影内容**逐格填充**；缺料自动接仓库补货，补不齐会在聊天里报出**还缺多少**（0.5.5）。默认关闭，与 quickcraft 共存时各读各的开关。
+7. **投影容器填充**（0.5.4，批次 A）—— 装了 Litematica 时，右键投影里的箱子/漏斗/发射器等容器，打开后按投影内容**逐格填充**；缺料自动接仓库补货，补不齐会在聊天里报出**还缺多少**（0.5.5）；仓库多给的填充物在填完后自动退回仓库（同一轮）。默认关闭，与 quickcraft 共存时各读各的开关。
 8. **容器填充物合计**（0.5.6）—— 一张表：整张原理图**所有容器里要求的物品**加起来，对照**背包 + 虚空仓库**看还缺多少。不需要开着容器、也不需要正在填充。入口是 **Litematica 材料列表工具栏上的「容器材料」按钮**（0.5.7），另有一个默认未绑定的热键。
 
 ![Side](https://img.shields.io/badge/side-%E7%BA%AF%E5%AE%A2%E6%88%B7%E7%AB%AF-informational) ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.x-2ea043)
@@ -81,6 +81,21 @@ N = 64 → 静默续填；N < 64 → 聊天报「还缺 64−N」
 - **到手件数只认背包增量**：`printer_take` 的回执只有状态、没有件数，所以判据是「服务端回 `OK`」∩「背包里这件东西真的变多了多少」。非 `OK` 一律记 0 —— 背包数字有变化属于别的原因（别人的货 / 迟到回执 / 你自己手动拿的）。
 - **有缺口才说话**：补齐了就静默续填；一件都没给报「仓库里没有 X ×N」，只给一部分报「X 仓库只补到 M，还缺 K」。需求未知的条目（`need = 0`）不参与报缺口，免得报出假的「缺 0」。
 - **不动协议**：全在客户端算，`printer_take` 一个字节没改，老服务端照常工作。
+
+## 余料自动返还（同一轮）
+
+投影填充从仓库取的是「这种物品能给多少给多少」，而容器往往只用其中一小部分。填完之后，剩下的会走 `printer_return` 整格退回仓库：
+
+```
+仓库给 64、容器只要 20 ──printer_take──▶ 背包 64
+   └─ 填充用掉 20 ──▶ 背包剩 44 ──printer_return{槽位号}──▶ 仓库
+```
+
+- **退多少**：账本只记「仓库给的 − 容器缺口」，再用「现在手里比开始要货前多了多少」夹一次；两道夹子取小。填充中途失败时不会按账面数把没退成的再退一遍，玩家自己又捡了同种物品也不会被全退。
+- **退哪几格**：只有账本**完整覆盖整格**才上交，差 1 个都跳过 —— 服务端按整格收，放行一次就等于把玩家自己的存货退走。玩家手里的选中格、潜影盒、带数据组件的同种物品也都整格跳过。
+- **什么时候退**：补料链停下 2 秒、且没有容器界面开着才发一批。连续填充在几十个容器之间连轴转时账一路累加，整片填完才退一次，不会「退 → 要 → 退」空转。
+- **通道**：与 carpet-Neko-Addition 1.0.17 的 `printer_return` / `printer_return_result` 逐字节同构；对面不支持就静默放弃。printer 同时在场时可能抢走回执接收器，这时用背包差分兜底（那几格真的空了就算成功）。
+- **看得见**：动作栏打「余料已退回仓库：X ×N、…」；日志 `[虚空仓库退料]` 记下基线、账上件数与每批槽位号。
 
 ## 容器填充物合计（0.5.6）
 
@@ -206,16 +221,16 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻辑 SearchIndex + 单测）+ `modern/`（26.x 四版本）+ `versions/1.21.11`。
 
 ```bat
-.\gradlew.bat :modern:26.3:test        REM 26.3 共 145 条：配置 28 + 组合键 22 + 按键账本 5 + 配方本 43 + 聊天静音 9 + 仓库补货 8 + 填充状态/排队 6 + 连续填充 2 + 容器合计 3 + 提示语言 1
+.\gradlew.bat :modern:26.3:test        REM 26.3 共 164 条（本轮新增 19 条余料返还判据）
 .\gradlew.bat :common:test             REM SearchIndex 11 条
 .\gradlew.bat :modern:26.3:build dist
 .\gradlew.bat :versions:1.21.11:dist
 ```
 
 - 🔴 **逐版本构建**（与 carpet 同款铁律）：全量 `build` 在 26.x 与 1.21.11 混跑时可能撞 TinyRemapper。
-- 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` + `neko/voidwarehouse/restock/` 四个通道类（`printer_take*`、`printer_query*`）与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
+- 🔴 **与服务端 jar 成对更新**：`neko/voidwarehouse/search/` 三个 payload 类 + `neko/voidwarehouse/fill/FillRequestPayload` + `neko/voidwarehouse/restock/` 六个通道类（`printer_take*`、`printer_query*`、`printer_return*`）与 carpet-Neko-Addition 里同名类**必须逐字节一致**（同 FQCN 双份、Fabric 只加载一份）。改一边务必同步改另一边，校验口径见排障手册。
 - malilib 依赖坐标在各自 `gradle.properties`（`malilib_version` + `malilib_artifact`），仓库走 `https://masa.dy.fi/maven/sakura-ryoko`；26.x 用 `implementation`，**1.21.11 必须 `modImplementation`**（那份 jar 是中间名，不 remap 一行都编译不过）。
-- 交付前必跑 **129 条单测（26.3 118 + common 11）+ 1950 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
+- 交付前必跑 **175 条单测（26.3 164 + common 11）+ 2575 条** jar 级字节码断言 + 变异（模板在工作区 `.workbuddy/tools/`），细节见排障手册。
 
 ## 版本差异（仅两处）
 

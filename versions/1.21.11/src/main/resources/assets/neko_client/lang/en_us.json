@@ -38,6 +38,7 @@
   "message.neko_client.warehouse_take_throttled": "Warehouse restock: too fast, try again shortly",
   "message.neko_client.warehouse_take_bad_request": "Warehouse restock: unrecognised item",
   "message.neko_client.warehouse_take_no_reply": "Warehouse restock: no reply from server",
+  "message.neko_client.warehouse_return_done": "Leftovers returned to the warehouse: %s",
   "neko_client.fill.litematica.error.container_data_incomplete": "Cannot fully read schematic item %s. Material counts may be incomplete; replacement and writing preserve this container's original contents.",
   "neko_client.fill.message.container_copy.background_screen_open": "Fill: A screen is already open, background filling stopped",
   "neko_client.fill.message.container_copy.background_start": "Fill: Background filling %s",

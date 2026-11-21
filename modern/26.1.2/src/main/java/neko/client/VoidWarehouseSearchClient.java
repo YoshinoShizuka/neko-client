@@ -100,6 +100,9 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         // 仓库补货（0.5.3）：printer_take C2S + result S2C 的注册、回执接收、tick 推进
         // 全在 WarehouseTakeNetwork 里，入口只把两个版本的 registry 递进去。
         WarehouseTakeNetwork.init(c2s, s2c);
+        // 余料返还（0.5.7 同一轮）：投影填充从仓库取的填充物，用剩的按 printer_return 退回仓库。
+        // 通道、回执、tick 全在 WarehouseReturnQueue 里，入口只递 registry。
+        WarehouseReturnQueue.init(c2s, s2c);
         // 虚空仓库只读库存快照（0.5.6）：「容器填充物合计」界面的「已有」有一半来自这里。
         // printer 在场时不抢接收器，直接读它同步好的缓存。
         WarehouseStock.init(c2s, s2c);

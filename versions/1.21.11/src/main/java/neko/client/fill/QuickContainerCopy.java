@@ -4,6 +4,7 @@ package neko.client.fill;
 
 import static neko.client.fill.QuickContainerCopySources.*;
 
+import neko.client.WarehouseReturnQueue;
 import neko.client.WarehouseTakeNetwork;
 import neko.client.WarehouseText;
 import neko.client.fill.compat.QuickShulkerConnection;
@@ -742,9 +743,16 @@ public final class QuickContainerCopy implements ClientModInitializer {
                 continuous, target, type, template, success, useQuickShulker, rounds);
         warehouseSupply = state;
         warehouseSupplyStartedAt = System.currentTimeMillis();
+        if (rounds == 0) {
+            // 余料返还的基线必须在<b>第一次要货之前</b>采：之后手里就混进仓库的货了，
+            // 再采一次会把它们当成玩家自己本来就有的（见 WarehouseReturnQueue#beginSession）。
+            WarehouseReturnQueue.beginSession(client, needByItem.keySet());
+        }
         boolean started = WarehouseFillSupply.begin(client, needByItem, report -> {
             state.resolved = true;
             state.report = report;
+            // 仓库「整组给多了」的部分记进退料账本；真正发包在填充结束之后（见 WarehouseReturnQueue）
+            WarehouseReturnQueue.noteDelivered(report);
         });
         if (!started) {
             warehouseSupply = null;

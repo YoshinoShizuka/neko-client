@@ -38,6 +38,7 @@
   "message.neko_client.warehouse_take_throttled": "仓库补货：太快了，稍后再试",
   "message.neko_client.warehouse_take_bad_request": "仓库补货：这个物品无法识别",
   "message.neko_client.warehouse_take_no_reply": "仓库补货：服务端没有回应",
+  "message.neko_client.warehouse_return_done": "余料已退回仓库：%s",
   "neko_client.fill.litematica.error.container_data_incomplete": "容器物品 %s 无法完整读取，材料统计可能不完整；替换与写入保留该容器的原始内容。",
   "neko_client.fill.message.container_copy.background_screen_open": "投影填充: 当前已有界面打开，已停止后台填充",
   "neko_client.fill.message.container_copy.background_start": "投影填充: 开始后台填充%s",
