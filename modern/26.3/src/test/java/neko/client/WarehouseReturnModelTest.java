@@ -232,6 +232,136 @@ class WarehouseReturnModelTest {
     }
 
     @Test
+    @DisplayName("F1 add：仓库每一轮给了多少就累加多少，旧账保留，非正数不算")
+    void addAccumulates() {
+        Map<String, Integer> owed = budget("minecraft:dirt", 20);
+        Map<String, Integer> after = WarehouseReturnModel.add(owed, budget("minecraft:dirt", 64, "minecraft:stone", 64));
+        assertEquals(Map.of("minecraft:dirt", 84, "minecraft:stone", 64), after);
+        assertAll(
+                () -> assertEquals(Map.of("minecraft:dirt", 20), WarehouseReturnModel.add(owed, Map.of())),
+                () -> assertEquals(Map.of("minecraft:dirt", 20),
+                        WarehouseReturnModel.add(owed, budget("minecraft:dirt", 0, "x", -5))),
+                () -> assertEquals(Map.of("minecraft:dirt", 20), WarehouseReturnModel.add(owed, null)),
+                () -> assertEquals(Map.of("minecraft:dirt", 64),
+                        WarehouseReturnModel.add(null, budget("minecraft:dirt", 64))));
+    }
+
+    @Test
+    @DisplayName("F2 🔴 consume 逐物品各扣各的：铁锭的缺口不许吃掉玻璃的额度")
+    void consumeIsPerItem() {
+        Map<String, Integer> owed = budget("minecraft:iron_ingot", 64, "minecraft:white_stained_glass", 64);
+        Map<String, Integer> left = WarehouseReturnModel.consume(owed,
+                budget("minecraft:iron_ingot", 41, "minecraft:white_stained_glass", 4));
+        assertEquals(Map.of("minecraft:iron_ingot", 23, "minecraft:white_stained_glass", 60), left);
+    }
+
+    @Test
+    @DisplayName("F3 consume 扣到 0 就移出账本，扣多了不许变负数")
+    void consumeFloorAtZero() {
+        Map<String, Integer> owed = budget("minecraft:dirt", 10, "minecraft:stone", 5);
+        Map<String, Integer> left = WarehouseReturnModel.consume(owed,
+                budget("minecraft:dirt", 99, "minecraft:stone", 2));
+        assertEquals(Map.of("minecraft:stone", 3), left);
+    }
+
+    @Test
+    @DisplayName("F4 consume 的边界：空 / null / 账上没有的物品一律不动账")
+    void consumeEdgeCases() {
+        Map<String, Integer> owed = budget("minecraft:dirt", 64);
+        assertAll(
+                () -> assertEquals(owed, WarehouseReturnModel.consume(owed, Map.of())),
+                () -> assertEquals(owed, WarehouseReturnModel.consume(owed, null)),
+                () -> assertEquals(owed, WarehouseReturnModel.consume(owed, budget("minecraft:stone", 64))),
+                () -> assertEquals(owed, WarehouseReturnModel.consume(owed, budget("minecraft:dirt", 0))),
+                () -> assertEquals(Map.of(), WarehouseReturnModel.consume(null, budget("minecraft:dirt", 1))));
+    }
+
+    @Test
+    @DisplayName("F5 真机场景回放：漏斗 41 铁锭 + 4 片白玻璃，仓库各给 64 ⇒ 该退 23 + 60")
+    void hopperScenario() {
+        // ① 开局背包里两样都没有 ⇒ 基线 0
+        int ironBaseline = 0;
+        int glassBaseline = 0;
+        // ② 仓库各给一组
+        Map<String, Integer> owed = WarehouseReturnModel.add(Map.of(),
+                budget("minecraft:iron_ingot", 64, "minecraft:white_stained_glass", 64));
+        // ③ 回执到了、容器还开着 ⇒ 续填真的发生，用掉 41 + 4
+        owed = WarehouseReturnModel.consume(owed,
+                budget("minecraft:iron_ingot", 41, "minecraft:white_stained_glass", 4));
+        // ④ 填完背包里铁锭 23、玻璃 60（都在快捷栏：服务端从 slot 0 起塞）
+        int ironBudget = WarehouseReturnModel.returnable(
+                owed.getOrDefault("minecraft:iron_ingot", 0), ironBaseline, 23);
+        int glassBudget = WarehouseReturnModel.returnable(
+                owed.getOrDefault("minecraft:white_stained_glass", 0), glassBaseline, 60);
+        assertEquals(23, ironBudget);
+        assertEquals(60, glassBudget);
+
+        // ⑤ 两格各自整格覆盖 ⇒ 都挑得出来（选中格也一样，不许跳过）
+        List<WarehouseReturnModel.Slot> picked = WarehouseReturnModel.plan(
+                Map.of("minecraft:iron_ingot", ironBudget,
+                        "minecraft:white_stained_glass", glassBudget),
+                List.of(slot(0, "minecraft:iron_ingot", 23),
+                        slot(1, "minecraft:white_stained_glass", 60)),
+                Set.of(), 36);
+        assertEquals(2, picked.size());
+    }
+
+    @Test
+    @DisplayName("F6 🔴 续填没发生（容器被提前关掉）⇒ 账上是整批货，全部退回，别留在背包里")
+    void abandonedFillReturnsEverything() {
+        Map<String, Integer> owed = WarehouseReturnModel.add(Map.of(),
+                budget("minecraft:iron_ingot", 64));
+        // 没有 consume：填充压根没重填
+        int ironBudget = WarehouseReturnModel.returnable(owed.get("minecraft:iron_ingot"), 0, 64);
+        assertEquals(64, ironBudget);
+        assertEquals(1, WarehouseReturnModel.plan(
+                Map.of("minecraft:iron_ingot", ironBudget),
+                List.of(slot(0, "minecraft:iron_ingot", 64)),
+                Set.of(), 36).size());
+    }
+
+    @Test
+    @DisplayName("G1 🔴 deliveredOf 记的是到手件数，不是「到手 − 缺口」（改回后者会让余料永远退不掉）")
+    void deliveredOfIsGrossNotNet() {
+        List<neko.client.fill.WarehouseFillPlan.Delivery> report = List.of(
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:iron_ingot", 41, 64),
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:white_stained_glass", 4, 64),
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:stone", 64, 0));
+        Map<String, Integer> delivered = WarehouseReturnModel.deliveredOf(report);
+        assertEquals(Map.of("minecraft:iron_ingot", 64, "minecraft:white_stained_glass", 64), delivered,
+                "到手 64 就该记 64；没到货的 stone 不该出现");
+    }
+
+    @Test
+    @DisplayName("G2 🔴 usedOf = min(到手, 缺口)，只在填充真的重填那一轮才拿来扣账")
+    void usedOfIsMinOfGotAndNeed() {
+        List<neko.client.fill.WarehouseFillPlan.Delivery> report = List.of(
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:iron_ingot", 41, 64),
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:white_stained_glass", 4, 64),
+                // 仓库只补到 10、缺口 30 ⇒ 只用掉 10（能用的就这么多）
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:stone", 30, 10),
+                // 需求未知的旧入口：说不出会用多少，就不扣
+                new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:dirt", 0, 64));
+        assertEquals(Map.of(
+                        "minecraft:iron_ingot", 41,
+                        "minecraft:white_stained_glass", 4,
+                        "minecraft:stone", 10),
+                WarehouseReturnModel.usedOf(report));
+    }
+
+    @Test
+    @DisplayName("G3 deliveredOf / usedOf 的边界：null 报告、空 id、全零")
+    void reportHelpersEdgeCases() {
+        assertAll(
+                () -> assertEquals(Map.of(), WarehouseReturnModel.deliveredOf(null)),
+                () -> assertEquals(Map.of(), WarehouseReturnModel.usedOf(null)),
+                () -> assertEquals(Map.of(),
+                        WarehouseReturnModel.deliveredOf(List.of(new neko.client.fill.WarehouseFillPlan.Delivery("", 5, 5)))),
+                () -> assertEquals(Map.of(),
+                        WarehouseReturnModel.usedOf(List.of(new neko.client.fill.WarehouseFillPlan.Delivery("minecraft:dirt", 0, 0)))));
+    }
+
+    @Test
     @DisplayName("E1 整条链路：仓库给 64、缺口 44 ⇒ 填充从那一格用掉 44、剩 20 ⇒ 整格覆盖，可以上交")
     void endToEnd() {
         // 开局手里 10 个（玩家自己的），仓库给 64、缺口 44 ⇒ 余料 20

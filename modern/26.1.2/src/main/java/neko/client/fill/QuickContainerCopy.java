@@ -795,6 +795,9 @@ public final class QuickContainerCopy implements ClientModInitializer {
         boolean previousQuickShulkerSources = allowQuickShulkerSources;
         recordedTemplate = state.template;
         allowQuickShulkerSources = state.useQuickShulker;
+        // 货已到齐、马上就要真填这一轮 ⇒ 把这一轮会用掉的件数从退料账上扣掉。
+        // 没走到这里（容器在回执到达前被关掉 / 玩家放弃）就一件都不扣，那批货会原样退回仓库。
+        WarehouseReturnQueue.noteRoundApplied(state.report);
         FillResult result;
         try {
             result = applyTemplate(client, handler, state.success, false);
@@ -830,6 +833,29 @@ public final class QuickContainerCopy implements ClientModInitializer {
         } else {
             sendStatusMessage(client, message);
         }
+    }
+
+    /**
+     * 仓库补料链是不是还在跑（未结算 / 还在要货 / 回执刚回来还没续填）。
+     *
+     * <p>给<b>自动填充</b>用：{@code printer_take} 是异步的 —— 右键打开容器那一瞬间只能先把手头
+     * 有的填进去，缺的部分等回执再续填。0.5.7 真机上的坑就在这里：自动填充在
+     * {@link #applyTemplateSnapshot} 返回后<b>无条件</b>关掉了容器，回执到达时已经没有菜单可填，
+     * 于是「第一次右键只取货、关掉界面；第二次右键才真的填进去」。
+     * 现在容器会留到补料链收尾，续填完再关。</p>
+     */
+    public static boolean isWarehouseSupplyActive() {
+        return warehouseSupply != null || WarehouseFillSupply.isActive();
+    }
+
+    /**
+     * 后台连续填充是不是在跑。
+     *
+     * <p>这时界面由连续填充管（它自己会开 / 关），其他路径不许替它关 ——
+     * 自动填充等补料收尾时「顺手把界面关了」就会把它整片打断。</p>
+     */
+    public static boolean isContinuousFillRunning() {
+        return continuousTask != null;
     }
 
     /** 这一轮补料有没有真的拿到东西 */

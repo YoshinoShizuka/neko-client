@@ -63,11 +63,12 @@ public final class WarehouseReturnQueue {
     /**
      * 补料链停下之后再过这么多 tick 才动手。
      *
-     * <p>取 40（2 秒）：一轮 {@code applyTemplate} 加回执结算最多几十毫秒，
-     * 2 秒足够把「同一个容器的下一轮补料」「连续填充的下一个容器」都等过去，
+     * <p>取 60（3 秒）：一轮 {@code applyTemplate} 加回执结算最多几十毫秒，3 秒足够把
+     * 「同一个容器的下一轮补料」「连续填充的下一个容器」都等过去，也给玩家留出
+     * 「刚关掉箱子又想再填一次」的余地 —— 太短会让刚取出来的材料立刻被退回去。
      * 又短到玩家松开右键后能立刻看到背包变干净。</p>
      */
-    private static final long IDLE_TICKS = 40L;
+    private static final long IDLE_TICKS = 60L;
 
     /** 一批最多等多久回执（毫秒）。50ms 限流 + 往返，2 秒足够。 */
     private static final long ACK_TIMEOUT_MS = 2000L;
@@ -194,31 +195,51 @@ public final class WarehouseReturnQueue {
     }
 
     /**
-     * 每一轮补料结算后调一次：把「仓库整组给多了」的那部分记进账本。
+     * 每一轮补料结算后调一次：把<b>仓库这一轮给了多少</b>记进账本。
      *
-     * <p>余料 = {@code 到手件数 − 缺口件数}。缺口以内的都是填充真要用的，不算余料；
-     * 仓库只补到一部分时（{@code 到手 < 缺口}）这里算出来是 0，也就一件都不退。</p>
+     * <p>🔴 记的是到手件数，不是「到手 − 缺口」。第一版按「到手 − 缺口」记，真机上余料永远退不掉：
+     * 自动填充那时在补料回执到达前就关掉了容器，续填压根没发生，「缺口以内都算用掉了」的前提不成立，
+     * 账上只记 23 件、背包里躺着 64 件，一格都挑不出来。现在「用掉多少」由
+     * {@link #noteRoundApplied} 单独扣，只有填充<b>真的重填过</b>才算。</p>
      */
     public static void noteDelivered(List<WarehouseFillPlan.Delivery> report) {
         if (!sessionOpen || report == null || report.isEmpty()) {
             return;
         }
-        for (WarehouseFillPlan.Delivery delivery : report) {
-            if (delivery == null || delivery.itemId() == null || delivery.itemId().isBlank()) {
-                continue;
-            }
-            if (delivery.need() <= 0) {
-                // 需求未知（只有物品清单的旧入口）：说不出填充会用掉多少，就不退。
-                continue;
-            }
-            int leftover = delivery.got() - delivery.need();
-            if (leftover <= 0) {
-                continue;
-            }
-            OWED.merge(delivery.itemId(), leftover, Integer::sum);
-            LOGGER.info("[虚空仓库退料] 记账：{} 到手 {} 件、缺口 {} 件 ⇒ 余料 {} 件（账上合计 {} 件）",
-                    delivery.itemId(), delivery.got(), delivery.need(), leftover,
-                    WarehouseReturnModel.total(OWED));
+        Map<String, Integer> delivered = WarehouseReturnModel.deliveredOf(report);
+        if (delivered.isEmpty()) {
+            return;
+        }
+        OWED.clear();
+        OWED.putAll(WarehouseReturnModel.add(OWED, delivered));
+        for (Map.Entry<String, Integer> entry : delivered.entrySet()) {
+            LOGGER.info("[虚空仓库退料] 记账：{} 到手 {} 件（账上合计 {} 件）",
+                    entry.getKey(), entry.getValue(), WarehouseReturnModel.total(OWED));
+        }
+        lastActivityTick = now(Minecraft.getInstance());
+    }
+
+    /**
+     * 填充<b>真的又填了一轮</b>之后调一次：把这一轮用掉的件数从账上扣掉。
+     *
+     * <p>调用点只有一个 —— {@code QuickContainerCopy#resumeAfterWarehouseSupply} 里、
+     * 拿着「货已到齐」的菜单真正重填之前。填充没重填（容器被关掉 / 玩家放弃）就不会走到这里，
+     * 账上仍然是「仓库给的全部」，于是那批货会原样退回仓库 —— 这正是我们要的：
+     * 没被用掉的，一件都不该留在玩家背包里。</p>
+     */
+    public static void noteRoundApplied(List<WarehouseFillPlan.Delivery> report) {
+        if (!sessionOpen || report == null || report.isEmpty() || OWED.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> used = WarehouseReturnModel.usedOf(report);
+        if (used.isEmpty()) {
+            return;
+        }
+        OWED.clear();
+        OWED.putAll(WarehouseReturnModel.consume(OWED, used));
+        for (Map.Entry<String, Integer> entry : used.entrySet()) {
+            LOGGER.info("[虚空仓库退料] 填充用掉：{} {} 件（账上还剩 {} 件）",
+                    entry.getKey(), entry.getValue(), WarehouseReturnModel.total(OWED));
         }
         lastActivityTick = now(Minecraft.getInstance());
     }
@@ -314,6 +335,9 @@ public final class WarehouseReturnQueue {
         if (slots.isEmpty()) {
             // 账上有数、但没有一格是「整格都归仓库」的。绝不硬退（那会把玩家的存货退走），
             // 记一条能对上号的日志后收尾；下一次填充会重新记账。
+            LOGGER.info("[虚空仓库退料] 挑不出整格都是仓库余料的槽位：可退上限 {} 件，背包里同种格子 {} ⇒ {}",
+                    WarehouseReturnModel.total(budget), describeSameItems(client, budget),
+                    describe());
             closeSession("挑不出整格都是仓库余料的槽位");
             return;
         }
@@ -502,21 +526,21 @@ public final class WarehouseReturnQueue {
     /**
      * 扫一遍背包，挑出<b>有可能</b>上交的格子（还没做账本核对）。
      *
-     * <p>三类整格跳过：① 玩家当前选中的那一格（手里的东西突然没了最扎眼）；
-     * ② 潜影盒（服务端整类拒绝，而且正常流程里仓库根本不会把盒子发给填充）；
-     * ③ 带数据组件的堆叠（附魔书、命名物品…）—— 仓库发出来的永远是<b>默认数据组件</b>那一份，
+     * <p>两类整格跳过：① 潜影盒（服务端整类拒绝，而且正常流程里仓库根本不会把盒子发给填充）；
+     * ② 带数据组件的堆叠（附魔书、命名物品…）—— 仓库发出来的永远是<b>默认数据组件</b>那一份，
      * 带组件的同种物品一定是玩家自己的。</p>
+     *
+     * <p>🔴 <b>不跳过玩家选中的那一格</b>：服务端 {@code PrinterTakeService#tryGive} 是从
+     * slot 0 起找空位的，货几乎总是先落在快捷栏第一格，而那一格默认就是玩家选中的格子。
+     * 第一版学 printer「跳过选中格」，结果最大的那堆余料永远挑不出来 —— 真机上表现为
+     * 「填充完了东西还在背包里」。填充这时已经结束，手里的东西该回仓库就回仓库。</p>
      */
     private static List<WarehouseReturnModel.Slot> collectSlots(Minecraft client) {
         var inventory = client.player.getInventory();
         int size = Math.min(WarehouseReturnModel.MAIN_INVENTORY_SLOTS, inventory.getContainerSize());
-        int selected = inventory.getSelectedSlot();
         int hotbar = Math.min(WarehouseReturnModel.HOTBAR_SLOTS, size);
         List<WarehouseReturnModel.Slot> slots = new ArrayList<>();
         for (int index : WarehouseReturnModel.scanOrder(size, hotbar)) {
-            if (index == selected) {
-                continue;
-            }
             ItemStack stack = inventory.getItem(index);
             if (stack.isEmpty() || isShulkerBox(stack)) {
                 continue;
@@ -531,6 +555,28 @@ public final class WarehouseReturnQueue {
             slots.add(new WarehouseReturnModel.Slot(index, key.toString(), stack.getCount()));
         }
         return slots;
+    }
+
+    /** 「背包里这些物品各有多少格、各多少件」，只给「挑不出整格」那条诊断日志用。 */
+    private static String describeSameItems(Minecraft client, Map<String, Integer> budget) {
+        if (client == null || client.player == null || budget.isEmpty()) {
+            return "（无）";
+        }
+        var inventory = client.player.getInventory();
+        int size = Math.min(WarehouseReturnModel.MAIN_INVENTORY_SLOTS, inventory.getContainerSize());
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int index = 0; index < size; index++) {
+            ItemStack stack = inventory.getItem(index);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            Identifier key = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            if (key == null || !budget.containsKey(key.toString())) {
+                continue;
+            }
+            counts.merge(key + "[" + index + "]", stack.getCount(), Integer::sum);
+        }
+        return counts.isEmpty() ? "（无）" : counts.toString();
     }
 
     /** 数主背包 36 格里「默认数据组件」的那一份该物品有多少件（与服务端口径一致）。 */

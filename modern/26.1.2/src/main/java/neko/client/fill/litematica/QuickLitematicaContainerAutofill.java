@@ -37,6 +37,15 @@ public final class QuickLitematicaContainerAutofill implements ClientModInitiali
     private BlockPos pendingContainerPos;
     private BlockHitResult pendingFillTarget;
     private int pendingTicks;
+    /**
+     * 正在等仓库补料链收尾的那个容器：收尾（续填完 / 放弃）之后再关界面。
+     *
+     * <p>🔴 0.5.7 真机症状的根因：补料是<b>异步</b>的，这一帧只能先把背包里有的填进去，
+     * 缺的部分等 {@code printer_take} 回执回来再续填。旧实现在 {@code applyTemplateSnapshot}
+     * 返回后立刻 {@code closeCurrentScreen}，回执到达时菜单已经没了 —— 续填直接放弃，
+     * 玩家必须再右键一次，而且第一次右键看起来「只取了货什么都没填」。</p>
+     */
+    private boolean awaitingSupplyClose;
 
     @Override
     public void onInitializeClient() {
@@ -47,7 +56,13 @@ public final class QuickLitematicaContainerAutofill implements ClientModInitiali
 
     public static void cancelPendingForContinuousFill(Minecraft client) {
         QuickLitematicaContainerAutofill active = ACTIVE.get();
-        if (active == null || active.pendingContainerPos == null) {
+        if (active == null) {
+            return;
+        }
+        // 连续填充接手了界面：不管是在等容器打开还是在等仓库补料，都把「待关闭」标记清掉，
+        // 否则补料链一停就会把连续填充正要用的界面关掉。
+        active.awaitingSupplyClose = false;
+        if (active.pendingContainerPos == null) {
             return;
         }
         QuickContainerFillStatus.stop(client, active.pendingFillTarget, false);
@@ -60,6 +75,7 @@ public final class QuickLitematicaContainerAutofill implements ClientModInitiali
         if (!QuickCraftConfigs.isLitematicaContainerAutofillEnabled()) {
             lastUseDown = false;
             pendingContainerPos = null;
+            awaitingSupplyClose = false;
             QuickContainerFillStatus.stop(client, pendingFillTarget, true);
             pendingFillTarget = null;
             pendingTicks = 0;
@@ -68,6 +84,7 @@ public final class QuickLitematicaContainerAutofill implements ClientModInitiali
 
         handleUseAttempt(client);
         processPendingOpen(client);
+        processAwaitingSupplyClose(client);
     }
 
     private void handleUseAttempt(Minecraft client) {
@@ -129,7 +146,33 @@ public final class QuickLitematicaContainerAutofill implements ClientModInitiali
         }
 
         QuickContainerCopy.applyTemplateSnapshot(client, handler, snapshot, shouldUseQuickShulker(), target);
+        if (QuickContainerCopy.isWarehouseSupplyActive()) {
+            // 缺料已经向仓库要了，回执回来还要在这个菜单里续填 —— 界面必须留着。
+            // 关界面的活交给 processAwaitingSupplyClose：等补料链收尾再关。
+            awaitingSupplyClose = true;
+            return;
+        }
         closeCurrentScreen(client);
+    }
+
+    /**
+     * 补料链收尾之后把容器关掉（这是自动填充替玩家打开的那个）。
+     *
+     * <p>三种收尾都走这里：续填成功、续填后仍然缺料（已经报过缺口）、补料链超时 / 被取消。
+     * 玩家自己先按 E 关掉了也算收尾 —— 那种情况下只清标记，不再对空气调 {@code closeContainer}。</p>
+     */
+    private void processAwaitingSupplyClose(Minecraft client) {
+        if (!awaitingSupplyClose) {
+            return;
+        }
+        if (QuickContainerCopy.isWarehouseSupplyActive()
+                || QuickContainerCopy.isContinuousFillRunning()) {
+            return;
+        }
+        awaitingSupplyClose = false;
+        if (currentScreen(client) instanceof AbstractContainerScreen<?>) {
+            closeCurrentScreen(client);
+        }
     }
 
     private BlockHitResult getLookedAtBlock(Minecraft client) {
