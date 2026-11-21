@@ -171,6 +171,8 @@ public final class QuickContainerCopy implements ClientModInitializer {
                     true
             );
             QuickContainerFillStatus.finish(client, target, result.issueCount());
+            // 退料计时重置：不管这一轮要不要取料
+            WarehouseReturnQueue.noteActivity();
             if (result.isComplete()) {
                 suppressContinuousFillAfterSingleAction(client, target, type);
             } else {

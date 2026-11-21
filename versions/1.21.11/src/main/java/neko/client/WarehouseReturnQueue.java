@@ -98,8 +98,16 @@ public final class WarehouseReturnQueue {
 
     /** 物品 id → 第一次为它要货<b>之前</b>手里有多少件。记下就不再改（跨填充沿用）。 */
     private static final Map<String, Integer> BASELINE = new LinkedHashMap<>();
-    /** 账本：物品 id → 仓库给过、还没退回的件数。 */
-    private static final Map<String, Integer> OWED = new LinkedHashMap<>();
+    /**
+     * 账本：物品 id → 仓库给过、还没退回的件数。
+     *
+     * <p>🔴 刻意<b>不是 final</b>：每次记账 / 销账都是「算出一份新的，然后整体替换」。
+     * 0.5.7 真机上栽过一次 —— 写成 {@code OWED.clear(); OWED.putAll(add(OWED, …))}
+     * 时 {@code add} 读到的是已经清空的表，等于每次都用空账本重算，历史余额全丢：
+     * 日志里「账上合计 128 件」下一分钟变成 64 件，玻璃板的余料再也没人退。
+     * 换成整体替换之后，那种写法根本写不出来。</p>
+     */
+    private static Map<String, Integer> OWED = new LinkedHashMap<>();
 
     private static long lastActivityTick = Long.MIN_VALUE;
     private static long blockedUntilTick = Long.MIN_VALUE;
@@ -189,14 +197,28 @@ public final class WarehouseReturnQueue {
                 BASELINE.put(id, Math.max(0, countHeld(client, id) - delivered.get(id)));
             }
         }
-        OWED.clear();
-        OWED.putAll(WarehouseReturnModel.add(OWED, delivered));
+        OWED = WarehouseReturnModel.add(OWED, delivered);
         attempts = 0;
         blockedUntilTick = Long.MIN_VALUE;
         lastActivityTick = now(client);
         for (Map.Entry<String, Integer> entry : delivered.entrySet()) {
             LOGGER.info("[虚空仓库退料] 记账：{} 到手 {} 件（账上合计 {} 件）",
                     entry.getKey(), entry.getValue(), WarehouseReturnModel.total(OWED));
+        }
+    }
+
+    /**
+     * 有<b>任何</b>填充动作就推一下「最近活动」，不管那一轮要不要取料。
+     *
+     * <p>为什么不能只靠 {@link #noteDelivered}：不需要补料的那次填充（背包里已经够了）
+     * 一件货都不要，账本自然没有新事件，空闲计时就会一路走到底 —— 玩家连着填第二个容器时，
+     * 余料会在他正填的时候被退走，然后下一轮又要重新取。真机日志里 14:11:58 那次
+     * 「开箱但没有取货」正是这个情形。</p>
+     */
+    public static void noteActivity() {
+        Minecraft client = Minecraft.getInstance();
+        if (client != null && client.level != null) {
+            lastActivityTick = now(client);
         }
     }
 
@@ -213,7 +235,7 @@ public final class WarehouseReturnQueue {
     /** 作废整本账（断线 / 换世界）。 */
     public static void clear() {
         BASELINE.clear();
-        OWED.clear();
+        OWED = new LinkedHashMap<>();
         lastActivityTick = Long.MIN_VALUE;
         blockedUntilTick = Long.MIN_VALUE;
         attempts = 0;
@@ -366,9 +388,8 @@ public final class WarehouseReturnQueue {
         } else if (status == PrinterReturnResultPayload.NOTHING) {
             // 服务端一格都没收（槽位全被跳过）。再发同一批只会一直撞同一堵墙，
             // 按「这批退不了」销账，别把它变成每秒一次的常开重试。
-            OWED.clear();
-            OWED.putAll(WarehouseReturnModel.deduct(OWED, batch,
-                    WarehouseReturnModel.total(batch)));
+            OWED = WarehouseReturnModel.deduct(OWED, batch,
+                    WarehouseReturnModel.total(batch));
             LOGGER.warn("[虚空仓库退料] 服务端一格都没收（潜影盒 / 空槽全被跳过）⇒ 这批销账，剩余 {} 件",
                     pendingCount());
         } else {
@@ -381,8 +402,7 @@ public final class WarehouseReturnQueue {
     /** 销账 + 提示：回执与背包差分两条路共用，避免两份口径。 */
     private static void settle(Minecraft client, Map<String, Integer> batch, int returned,
                                String evidence) {
-        OWED.clear();
-        OWED.putAll(WarehouseReturnModel.deduct(OWED, batch, returned));
+        OWED = WarehouseReturnModel.deduct(OWED, batch, returned);
         announce(client, batch, returned);
         LOGGER.info("[虚空仓库退料] {}，实收 {} 件；账上还剩 {} 件 / {} 种",
                 evidence, returned, pendingCount(), pendingKinds());
@@ -486,7 +506,7 @@ public final class WarehouseReturnQueue {
             return;
         }
         LOGGER.info("[虚空仓库退料] 放弃这本账：{}", describe());
-        OWED.clear();
+        OWED = new LinkedHashMap<>();
         BASELINE.clear();
     }
 
