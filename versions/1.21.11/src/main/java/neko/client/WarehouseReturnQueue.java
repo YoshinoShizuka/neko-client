@@ -36,25 +36,26 @@ import java.util.Set;
  * 投影要 20 个、仓库给 64 个，填完之后多出来的 44 个就留在背包里。
  * 一个材料种类多的投影填十几个容器，背包很快被一堆「只用掉几个、剩下五六十」的整组材料占满。</p>
  *
- * <p>这条链给那些余料补上回程：填充结束（补料链停下 + 手上没有容器界面）后，
- * 按 {@code printer_return} 通道把「整格都是仓库余料」的槽位交还给仓库。</p>
+ * <h2>账本为什么<b>跨填充</b>存活</h2>
+ * <p>0.5.7 第一版是「一次填充一个会话」：开填采基线、填完结算、会话结束清空。真机上这么写会漏账 ——
+ * 只要那次填充<b>没有在同一轮里要货</b>（例如上一轮已经把材料取到手了，这一轮纯用背包里的货填完），
+ * 就没采基线、账本里也没有这件东西，余料永远躺在背包里。所以现在：</p>
+ * <ul>
+ *   <li>基线<b>一旦为该物品记下就不再改</b>（{@code putIfAbsent}），跨填充沿用；</li>
+ *   <li>账本只在「退回」或「确认用掉」时减少，不按会话清空；</li>
+ *   <li>「确认用掉」的判据是<b>背包里已经不多于基线</b>（{@link #pruneConsumed}）——
+ *       这一条同时兜住「玩家拿去用在别处」「放进箱子」两种走法，账本不会永远挂着。</li>
+ * </ul>
  *
- * <h2>为什么是「填充结束之后」而不是「填完立刻」</h2>
- * <p>连续填充（一次右键填一整片）会在几十个容器之间连轴转，用的还是同一批材料 ——
- * 每个容器填完就退一次的话，下一个容器立刻又要回来，形成「退 → 要 → 退」的空转。
- * 所以账本<b>跨轮累积</b>，只在「补料链停了 {@value #IDLE_TICKS} tick 且手上没有容器界面」
- * 时才真正发一次包。</p>
+ * <h2>什么时候动手</h2>
+ * <p>补料链停下 {@value #IDLE_TICKS} tick 且手上没有容器界面时才发一批。连续填充在几十个
+ * 容器之间连轴转时账一路累加，整片填完才退一次 —— 每个容器退一次会变成「退 → 要 → 退」空转。</p>
  *
- * <h2>为什么不用「到货时间 + 热集」那套</h2>
- * <p>{@code litematica-printer} 那套 LRU + 热集是为「打印途中持续取料、背包一直紧」设计的：
- * 它必须每几 tick 就决定「现在退哪几格」。本模组的填充是<b>一口气跑完</b>的离散动作，
- * 结束时该退什么一目了然（就是需求侧算出来的余料），不需要在时间维度上做取舍。
- * 共用的只有那条安全红线：<b>整格覆盖才允许上交</b>（见 {@link WarehouseReturnModel#plan}）。</p>
- *
- * <h2>账本什么时候作废</h2>
- * <p>断线 / 换世界（{@link ClientPlayConnectionEvents#DISCONNECT}）——
- * 那是唯一确定「接下来看到的是另一份背包」的时刻。关填充开关、改配置、进出维度都不清：
- * 那些不换背包，清了只会把余料变成认不出的死重。</p>
+ * <h2>🔴 回执可能到不了</h2>
+ * <p>{@code printer_return_result} 这条通道 {@code litematica-printer} 抢在前面注册
+ * （Fabric 先注册者赢，初始化顺序按 mod id 字典序）。所以这里用
+ * {@link PayloadReceivers#attach} 接管并转发；万一还是收不到，超时后用<b>背包差分</b>确认
+ * （那几格真的空了就算成交）—— 与取货侧「成功要取交集」是同一条纪律。</p>
  */
 public final class WarehouseReturnQueue {
 
@@ -65,8 +66,7 @@ public final class WarehouseReturnQueue {
      *
      * <p>取 60（3 秒）：一轮 {@code applyTemplate} 加回执结算最多几十毫秒，3 秒足够把
      * 「同一个容器的下一轮补料」「连续填充的下一个容器」都等过去，也给玩家留出
-     * 「刚关掉箱子又想再填一次」的余地 —— 太短会让刚取出来的材料立刻被退回去。
-     * 又短到玩家松开右键后能立刻看到背包变干净。</p>
+     * 「刚关掉箱子又想再填一次」的余地 —— 太短会让刚取出来的材料立刻被退回去。</p>
      */
     private static final long IDLE_TICKS = 60L;
 
@@ -76,10 +76,10 @@ public final class WarehouseReturnQueue {
     /** 两批之间至少隔几 tick（服务端限流是 50ms，这里给足 1 秒）。 */
     private static final long COOLDOWN_TICKS = 20L;
 
-    /** 服务端明确拒绝（规则没开 / 包不合法）之后，多久之内不再尝试。 */
+    /** 服务端明确拒绝（规则没开 / 包不合法 / 挑不出整格）之后，多久之内不再尝试。 */
     private static final long REJECT_BACKOFF_TICKS = 200L;
 
-    /** 一次填充会话最多发几批，防止某个坏状态把返还变成常开。 */
+    /** 一轮补料里最多发几批，防止某个坏状态把返还变成常开。收到新货会重置。 */
     private static final int MAX_ATTEMPTS = 6;
 
     private static boolean initialized;
@@ -93,22 +93,14 @@ public final class WarehouseReturnQueue {
     private static volatile int latestReturned;
     /** 在飞那一批的物品 → 件数（回执只带总量，销账按这个顺序扣）。 */
     private static Map<String, Integer> inFlightBatch = Map.of();
-    /**
-     * 在飞那一批的槽位 → 件数。
-     *
-     * <p>🔴 回执接收器可能被 printer 抢先注册（Fabric 的 {@code registerGlobalReceiver}
-     * 是<b>先注册者赢、后注册者返回 false 且不覆盖</b>，见 {@link #init}），那时我们收不到
-     * {@code printer_return_result}。这批槽位号就是「背包差分兜底」的唯一依据：
-     * 服务端确实把它们清空了 ⇒ 按实收销账，功能照样能用，只是少了那条提示。</p>
-     */
+    /** 在飞那一批的槽位 → 件数（回执收不到时靠它做背包差分，见 {@link #pollAck}）。 */
     private static Map<Integer, Integer> inFlightSlotCounts = Map.of();
 
-    /** 会话开始时手里各有多少件（只数「默认数据组件」的堆叠）。 */
+    /** 物品 id → 第一次为它要货<b>之前</b>手里有多少件。记下就不再改（跨填充沿用）。 */
     private static final Map<String, Integer> BASELINE = new LinkedHashMap<>();
-    /** 账本：物品 id → 还欠着多少件没退回仓库。 */
+    /** 账本：物品 id → 仓库给过、还没退回的件数。 */
     private static final Map<String, Integer> OWED = new LinkedHashMap<>();
 
-    private static boolean sessionOpen;
     private static long lastActivityTick = Long.MIN_VALUE;
     private static long blockedUntilTick = Long.MIN_VALUE;
     private static int attempts;
@@ -125,19 +117,9 @@ public final class WarehouseReturnQueue {
                 PrinterReturnPayload.TYPE, PrinterReturnPayload.CODEC);
         PayloadChannels.register(s2c, "printer_return_result",
                 PrinterReturnResultPayload.TYPE, PrinterReturnResultPayload.CODEC);
-        try {
-            // 🔴 Fabric 的规则是「先注册者赢」：同一通道已经有 handler 时这里返回 false，
-            // 并且<b>不会</b>覆盖原来的。printer 与本模组同时装时很可能就是那种情况 ——
-            // 那就收不到回执，改由 pollAck 里的「背包差分」确认结果，绝不把功能整个关掉。
-            boolean ours = ClientPlayNetworking.registerGlobalReceiver(
-                    PrinterReturnResultPayload.TYPE, WarehouseReturnQueue::receive);
-            if (!ours) {
-                LOGGER.info("[虚空仓库退料] 回执接收器已被别的模组占用（printer 在场时属正常）："
-                        + "改用背包差分确认返还结果");
-            }
-        } catch (RuntimeException duplicate) {
-            LOGGER.info("[虚空仓库退料] 回执接收端注册被拒（{}）⇒ 改用背包差分确认返还结果",
-                    duplicate.toString());
+        // 🔴 接管而不是「注册失败就算了」：printer 的 mod id 排在前面，永远先注册这条回执通道。
+        if (PayloadReceivers.attach(PrinterReturnResultPayload.TYPE, WarehouseReturnQueue::receive)) {
+            LOGGER.info("[虚空仓库退料] 回执接收器原先被别的模组占用（printer 在场时属正常）：已接管并转发，两边都收得到");
         }
         ClientTickEvents.END_CLIENT_TICK.register(WarehouseReturnQueue::tick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
@@ -160,9 +142,9 @@ public final class WarehouseReturnQueue {
     /**
      * 一次填充开始向仓库要货时调用（只在第一轮）。
      *
-     * <p>这里记下<b>要货之前</b>手里各有多少件 —— 它是「余料不可能超过这个增量」那道夹子的基线
-     * （见 {@link WarehouseReturnModel#returnable}）。基线只在会话的第一轮采：后面几轮
-     * 手里已经混进了仓库的货，再采一次会把它们算成玩家自己的。</p>
+     * <p>只为<b>还没记过</b>的物品采基线，而且必须发生在要货之前 —— 调用点就在
+     * {@code WarehouseFillSupply.begin} 前面。已经记过的物品沿用旧基线，
+     * 那才是「这一批仓库贡献了多少」的正确起点。</p>
      *
      * @param itemIds 这一轮要问仓库要的物品 id（来自投影容器的缺口）
      */
@@ -171,77 +153,51 @@ public final class WarehouseReturnQueue {
                 || itemIds == null || itemIds.isEmpty()) {
             return;
         }
-        long now = now(client);
-        if (sessionOpen) {
-            // 上一次会话还没收尾（连续填充的下一个容器）：基线绝不动，账继续往上加。
-            // 这样整片容器填完之前不会退料，退的时候也是按「整片」算的总账。
-            lastActivityTick = now;
-            LOGGER.info("[虚空仓库退料] 连续填充的下一个容器：账继续累加，{}", describe());
-            return;
-        }
-        BASELINE.clear();
-        OWED.clear();
-        attempts = 0;
-        blockedUntilTick = Long.MIN_VALUE;
+        lastActivityTick = now(client);
+        boolean added = false;
         for (String id : itemIds) {
-            if (id == null || id.isBlank()) {
+            if (id == null || id.isBlank() || BASELINE.containsKey(id)) {
                 continue;
             }
             BASELINE.put(id, countHeld(client, id));
+            added = true;
         }
-        sessionOpen = true;
-        lastActivityTick = now;
-        LOGGER.info("[虚空仓库退料] 开始记账：{} 种物品，基线 {}", BASELINE.size(), BASELINE);
+        if (added) {
+            LOGGER.info("[虚空仓库退料] 记基线：{} 种 {}", BASELINE.size(), BASELINE);
+        }
     }
 
     /**
      * 每一轮补料结算后调一次：把<b>仓库这一轮给了多少</b>记进账本。
      *
-     * <p>🔴 记的是到手件数，不是「到手 − 缺口」。第一版按「到手 − 缺口」记，真机上余料永远退不掉：
-     * 自动填充那时在补料回执到达前就关掉了容器，续填压根没发生，「缺口以内都算用掉了」的前提不成立，
-     * 账上只记 23 件、背包里躺着 64 件，一格都挑不出来。现在「用掉多少」由
-     * {@link #noteRoundApplied} 单独扣，只有填充<b>真的重填过</b>才算。</p>
+     * <p>🔴 记的是到手件数，不是「到手 − 缺口」。按后者记的前提是「缺口以内的都被填充用掉了」，
+     * 一旦那一轮没续填（容器被关 / 回执丢了）前提就破产，余料永远退不掉 —— 真机日志里
+     * `取走 64 个 铁锭` 后面跟着 `账上 0 件`，就是这个写法留下的坑。</p>
      */
     public static void noteDelivered(List<WarehouseFillPlan.Delivery> report) {
-        if (!sessionOpen || report == null || report.isEmpty()) {
+        if (report == null || report.isEmpty()) {
             return;
         }
         Map<String, Integer> delivered = WarehouseReturnModel.deliveredOf(report);
         if (delivered.isEmpty()) {
             return;
         }
+        Minecraft client = Minecraft.getInstance();
+        for (String id : delivered.keySet()) {
+            if (!BASELINE.containsKey(id)) {
+                // 基线没采到（理论上不会）：用「现在手里 − 刚到手」反推，绝不按 0 算
+                BASELINE.put(id, Math.max(0, countHeld(client, id) - delivered.get(id)));
+            }
+        }
         OWED.clear();
         OWED.putAll(WarehouseReturnModel.add(OWED, delivered));
+        attempts = 0;
+        blockedUntilTick = Long.MIN_VALUE;
+        lastActivityTick = now(client);
         for (Map.Entry<String, Integer> entry : delivered.entrySet()) {
             LOGGER.info("[虚空仓库退料] 记账：{} 到手 {} 件（账上合计 {} 件）",
                     entry.getKey(), entry.getValue(), WarehouseReturnModel.total(OWED));
         }
-        lastActivityTick = now(Minecraft.getInstance());
-    }
-
-    /**
-     * 填充<b>真的又填了一轮</b>之后调一次：把这一轮用掉的件数从账上扣掉。
-     *
-     * <p>调用点只有一个 —— {@code QuickContainerCopy#resumeAfterWarehouseSupply} 里、
-     * 拿着「货已到齐」的菜单真正重填之前。填充没重填（容器被关掉 / 玩家放弃）就不会走到这里，
-     * 账上仍然是「仓库给的全部」，于是那批货会原样退回仓库 —— 这正是我们要的：
-     * 没被用掉的，一件都不该留在玩家背包里。</p>
-     */
-    public static void noteRoundApplied(List<WarehouseFillPlan.Delivery> report) {
-        if (!sessionOpen || report == null || report.isEmpty() || OWED.isEmpty()) {
-            return;
-        }
-        Map<String, Integer> used = WarehouseReturnModel.usedOf(report);
-        if (used.isEmpty()) {
-            return;
-        }
-        OWED.clear();
-        OWED.putAll(WarehouseReturnModel.consume(OWED, used));
-        for (Map.Entry<String, Integer> entry : used.entrySet()) {
-            LOGGER.info("[虚空仓库退料] 填充用掉：{} {} 件（账上还剩 {} 件）",
-                    entry.getKey(), entry.getValue(), WarehouseReturnModel.total(OWED));
-        }
-        lastActivityTick = now(Minecraft.getInstance());
     }
 
     /** 账上还欠着多少件（自查 / 日志用）。 */
@@ -258,19 +214,16 @@ public final class WarehouseReturnQueue {
     public static void clear() {
         BASELINE.clear();
         OWED.clear();
-        sessionOpen = false;
         lastActivityTick = Long.MIN_VALUE;
         blockedUntilTick = Long.MIN_VALUE;
         attempts = 0;
         forgetRequest();
     }
 
-    /**
-     * 账本的可读快照，压成一行给日志与自查用（不放物品译名：这条要在无语言环境下也能跑）。
-     */
+    /** 账本的可读快照，压成一行给日志与自查用（不放物品译名：这条要在无语言环境下也能跑）。 */
     public static String describe() {
-        if (!sessionOpen) {
-            return "（没有进行中的填充会话）";
+        if (OWED.isEmpty()) {
+            return "（账本为空）";
         }
         return "{账上=" + pendingCount() + "件/" + pendingKinds() + "种"
                 + " 基线=" + BASELINE.size() + "种"
@@ -279,10 +232,9 @@ public final class WarehouseReturnQueue {
     }
 
     /**
-     * 每客户端 tick 推进一次：等回执 → 等补料链安静 → 挑格 → 发包。
+     * 每客户端 tick 推进一次：等回执 → 等补料链安静 → 结算已用完的 → 挑格 → 发包。
      *
-     * <p>整条路径上「什么都不做」是常态（没有会话 / 还在要货 / 容器开着），
-     * 所以最前面几条判据都只是几次字段比较。</p>
+     * <p>「什么都不做」是常态（账本空 / 还在要货 / 容器开着），最前面几条判据都只是字段比较。</p>
      */
     private static void tick(Minecraft client) {
         if (client == null || client.player == null || client.level == null) {
@@ -293,7 +245,7 @@ public final class WarehouseReturnQueue {
             pollAck(client, now(client));
             return;
         }
-        if (!sessionOpen) {
+        if (OWED.isEmpty()) {
             return;
         }
         if (WarehouseFillSupply.isActive()) {
@@ -305,40 +257,40 @@ public final class WarehouseReturnQueue {
         if (lastActivityTick != Long.MIN_VALUE && now - lastActivityTick < IDLE_TICKS) {
             return;
         }
-        if (OWED.isEmpty()) {
-            closeSession("没有余料");
-            return;
-        }
         if (!isSupported()) {
-            closeSession("服务端不支持返还通道");
+            LOGGER.info("[虚空仓库退料] 服务端不支持返还通道 ⇒ 放弃这本账（{}）", describe());
+            clear();
             return;
         }
         if (now < blockedUntilTick) {
-            return;
-        }
-        if (attempts >= MAX_ATTEMPTS) {
-            closeSession("重试次数用尽");
             return;
         }
         if (!client.player.containerMenu.equals(client.player.inventoryMenu)) {
             // 容器还开着：东西在玩家眼皮底下突然消失比多等一会儿更吓人。
             return;
         }
+        pruneConsumed(client);
+        if (OWED.isEmpty()) {
+            return;
+        }
+        if (attempts >= MAX_ATTEMPTS) {
+            LOGGER.info("[虚空仓库退料] 已试 {} 批仍未退成 ⇒ 放弃这本账（{}）", attempts, describe());
+            clear();
+            return;
+        }
         Map<String, Integer> budget = budgetOf(client);
         if (budget.isEmpty()) {
-            // 手里已经一件余料都不剩（填充用光了 / 玩家自己挪走了）⇒ 账自然销掉
-            closeSession("背包里已无仓库余料");
+            pruneAll();
             return;
         }
         List<WarehouseReturnModel.Slot> slots = WarehouseReturnModel.plan(
                 budget, collectSlots(client), Set.of(), WarehouseReturnModel.MAIN_INVENTORY_SLOTS);
         if (slots.isEmpty()) {
-            // 账上有数、但没有一格是「整格都归仓库」的。绝不硬退（那会把玩家的存货退走），
-            // 记一条能对上号的日志后收尾；下一次填充会重新记账。
+            // 账上有数、但没有一格是「整格都归仓库」的。绝不硬退（那会把玩家的存货退走）。
             LOGGER.info("[虚空仓库退料] 挑不出整格都是仓库余料的槽位：可退上限 {} 件，背包里同种格子 {} ⇒ {}",
-                    WarehouseReturnModel.total(budget), describeSameItems(client, budget),
-                    describe());
-            closeSession("挑不出整格都是仓库余料的槽位");
+                    WarehouseReturnModel.total(budget), describeSameItems(client, budget), describe());
+            blockedUntilTick = now + REJECT_BACKOFF_TICKS;
+            attempts++;
             return;
         }
         send(client, slots, budget, now);
@@ -348,9 +300,11 @@ public final class WarehouseReturnQueue {
     private static void send(Minecraft client, List<WarehouseReturnModel.Slot> slots,
                              Map<String, Integer> budget, long now) {
         Map<String, Integer> batch = new LinkedHashMap<>();
+        Map<Integer, Integer> slotCounts = new LinkedHashMap<>();
         List<Integer> indexes = new ArrayList<>(slots.size());
         for (WarehouseReturnModel.Slot slot : slots) {
             indexes.add(slot.index());
+            slotCounts.put(slot.index(), slot.count());
             batch.merge(slot.itemId(), slot.count(), Integer::sum);
         }
         int nonce = nextNonce;
@@ -359,10 +313,6 @@ public final class WarehouseReturnQueue {
         latestStatus = PrinterReturnResultPayload.NONE;
         latestReturned = 0;
         inFlightBatch = Collections.unmodifiableMap(new LinkedHashMap<>(batch));
-        Map<Integer, Integer> slotCounts = new LinkedHashMap<>();
-        for (WarehouseReturnModel.Slot slot : slots) {
-            slotCounts.put(slot.index(), slot.count());
-        }
         inFlightSlotCounts = Collections.unmodifiableMap(slotCounts);
         attempts++;
         try {
@@ -382,9 +332,8 @@ public final class WarehouseReturnQueue {
     /**
      * 回执到了没有；到了就销账。
      *
-     * <p>🔴 这里还有一条兜底：printer 同时在场时可能抢走同一个回执接收器（见 {@link #init}）。
-     * 那种情况下收不到回执，但<b>服务端照样把东西收走了</b> —— 所以超时时要看一眼那几格是不是
-     * 真的空了。用背包差分判成功，与取货侧「成功要取交集」是同一条纪律。</p>
+     * <p>🔴 兜底：printer 在场时回执可能收不到（见类注释）。超时后看一眼那几格是不是真的空了 ——
+     * 空了就按实收销账，物品确实已经回仓库了，只是没人告诉我们。</p>
      */
     private static void pollAck(Minecraft client, long now) {
         int status = latestStatus;
@@ -394,9 +343,8 @@ public final class WarehouseReturnQueue {
                 if (gone > 0) {
                     settle(client, inFlightBatch, gone, "没收到回执但背包差分确认已清空");
                 } else {
-                    // 真的一格没动：不销账（服务端可能还在忙），下一轮按背包现状重新挑
-                    LOGGER.warn("[虚空仓库退料] nonce={} 超时：没有回执，那 {} 格也还在 → 这批不销账，"
-                            + "稍后重挑", activeNonce, inFlightSlotCounts.size());
+                    LOGGER.warn("[虚空仓库退料] nonce={} 超时：没有回执，那 {} 格也还在 → 这批不销账，稍后重挑",
+                            activeNonce, inFlightSlotCounts.size());
                 }
                 forgetRequest();
                 blockedUntilTick = now + COOLDOWN_TICKS;
@@ -505,10 +453,48 @@ public final class WarehouseReturnQueue {
     }
 
     /**
+     * 把「手里已经不多于基线」的物品从账本里去掉 —— 那部分确实被用掉了（或者被玩家挪走了）。
+     *
+     * <p>这一条是账本能自己清干净的保证：没有它，一件被消费掉的物品会永远挂着基线，
+     * 之后玩家自己捡到同种物品反而会被当成仓库的货退走。</p>
+     */
+    private static void pruneConsumed(Minecraft client) {
+        if (OWED.isEmpty()) {
+            return;
+        }
+        List<String> consumed = new ArrayList<>();
+        for (String id : OWED.keySet()) {
+            int held = countHeld(client, id);
+            int baseline = BASELINE.getOrDefault(id, 0);
+            if (held <= baseline) {
+                consumed.add(id);
+            }
+        }
+        for (String id : consumed) {
+            Integer owed = OWED.remove(id);
+            BASELINE.remove(id);
+            LOGGER.info("[虚空仓库退料] {} 已回到基线（手里没有余料）⇒ 销账 {} 件", id, owed);
+        }
+        if (!consumed.isEmpty() && OWED.isEmpty()) {
+            LOGGER.info("[虚空仓库退料] 账本已清空");
+        }
+    }
+
+    /** 整本账作废（放弃 / 服务端不支持）。 */
+    private static void pruneAll() {
+        if (OWED.isEmpty() && BASELINE.isEmpty()) {
+            return;
+        }
+        LOGGER.info("[虚空仓库退料] 放弃这本账：{}", describe());
+        OWED.clear();
+        BASELINE.clear();
+    }
+
+    /**
      * 按背包现状算出「每种物品这次最多退多少件」。
      *
      * <p>两道夹子都在 {@link WarehouseReturnModel#returnable} 里：需求侧（账本）
-     * 与持有侧（现在比开局多了多少）。这里只负责把两个数字量出来。</p>
+     * 与持有侧（现在比基线多了多少）。这里只负责把两个数字量出来。</p>
      */
     private static Map<String, Integer> budgetOf(Minecraft client) {
         Map<String, Integer> budget = new LinkedHashMap<>();
@@ -615,20 +601,6 @@ public final class WarehouseReturnQueue {
     private static boolean isShulkerBox(ItemStack stack) {
         return stack.getItem() instanceof BlockItem blockItem
                 && blockItem.getBlock() instanceof ShulkerBoxBlock;
-    }
-
-    private static void closeSession(String reason) {
-        if (!sessionOpen) {
-            return;
-        }
-        int left = pendingCount();
-        LOGGER.info("[虚空仓库退料] 会话结束（{}）：账上剩 {} 件 / {} 种未退回",
-                reason, left, pendingKinds());
-        BASELINE.clear();
-        OWED.clear();
-        sessionOpen = false;
-        lastActivityTick = Long.MIN_VALUE;
-        forgetRequest();
     }
 
     private static void forgetRequest() {

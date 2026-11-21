@@ -220,7 +220,8 @@ public final class WarehouseReturnModel {
      * <p>🔴 记的是<b>到手件数</b>，不是「到手 − 缺口」。0.5.7 第一版按「到手 − 缺口」记，
      * 真机上直接翻车：那一版自动填充在补料回执到达前就把容器关了，于是<b>续填根本没发生</b> ——
      * 「缺口以内的都算用掉了」这个前提不成立，账上只记下 23 件，而背包里实实在在躺着 64 件，
-     * 余料永远退不掉。现在「用掉多少」由 {@link #consume} 单独扣，只有填充真的重填过才算数。</p>
+     * 余料永远退不掉。「用掉多少」现在由背包实际持有量与基线比出来（{@code WarehouseReturnQueue#pruneConsumed}），
+     * 不需要这一层再算一个中间量。</p>
      *
      * @return 新的账本（不修改入参）
      */
@@ -246,50 +247,6 @@ public final class WarehouseReturnModel {
         return out;
     }
 
-    /**
-     * 填充<b>真的重填了一轮</b>之后，把这一轮会用掉的件数从账上扣掉。
-     *
-     * <p>与 {@link #deduct} 的区别：这里<b>逐物品各扣各的</b>，不共用一份「总件数」。
-     * 因为「用掉多少」是按物品一一对应的（缺口 41 铁锭就只该从铁锭账上扣 41），
-     * 按总量顺序扣会让某一种物品吃掉另一种的额度。</p>
-     *
-     * <p>{@code used} 一般就是这一轮的各物品缺口（{@code min(到手, 缺口)} 已经在调用方算好）。
-     * 填充因容器满 / 被锁而少放了几件时这里会多扣（少退），方向安全。</p>
-     *
-     * @return 新的账本（不修改入参）
-     */
-    public static Map<String, Integer> consume(Map<String, Integer> owed, Map<String, Integer> used) {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        if (owed != null) {
-            for (Map.Entry<String, Integer> entry : owed.entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null && entry.getValue() > 0) {
-                    out.put(entry.getKey(), entry.getValue());
-                }
-            }
-        }
-        if (used == null || used.isEmpty() || out.isEmpty()) {
-            return out;
-        }
-        for (Map.Entry<String, Integer> entry : used.entrySet()) {
-            String itemId = entry.getKey();
-            int spent = entry.getValue() == null ? 0 : entry.getValue();
-            if (itemId == null || spent <= 0) {
-                continue;
-            }
-            Integer pending = out.get(itemId);
-            if (pending == null) {
-                continue;
-            }
-            int remaining = pending - spent;
-            if (remaining <= 0) {
-                out.remove(itemId);
-            } else {
-                out.put(itemId, remaining);
-            }
-        }
-        return out;
-    }
-
     /** 一份「物品 → 件数」表的总件数 */
     public static int total(Map<String, Integer> counts) {
         if (counts == null || counts.isEmpty()) {
@@ -309,8 +266,8 @@ public final class WarehouseReturnModel {
      *
      * <p>🔴 <b>不是</b>「到手 − 缺口」。这一条被真机打过脸：自动填充曾经在回执到达前就关掉了容器，
      * 续填压根没发生，而「缺口以内的都算用掉了」这个前提随之破产 —— 账上只记下 23 件、
-     * 背包里躺着 64 件，余料一件都退不掉。用掉多少由 {@link #usedOf} 单独算，只有填充真的
-     * 重填过那一轮才算数。</p>
+     * 背包里躺着 64 件，余料一件都退不掉。「用掉多少」改由背包持有量与基线比出来，
+     * 这里只负责老实记「到手多少」。</p>
      *
      * @param report 一轮补料的结算表（{@code WarehouseFillPlan.Delivery} 列表）
      */
@@ -331,26 +288,4 @@ public final class WarehouseReturnModel {
         return out;
     }
 
-    /**
-     * 一轮补料回执里「填充这一轮会用掉多少件」= 各物品 {@code min(到手, 缺口)}。
-     *
-     * <p>只在填充<b>真的重填了</b>那一轮才拿来扣账（见 {@link #consume}）——
-     * 没重填就没用掉，那批货该原样回仓库。</p>
-     */
-    public static Map<String, Integer> usedOf(List<WarehouseFillPlan.Delivery> report) {
-        Map<String, Integer> out = new LinkedHashMap<>();
-        if (report == null) {
-            return out;
-        }
-        for (WarehouseFillPlan.Delivery delivery : report) {
-            if (delivery == null || delivery.itemId() == null || delivery.itemId().isBlank()) {
-                continue;
-            }
-            if (delivery.need() <= 0 || delivery.got() <= 0) {
-                continue;
-            }
-            out.merge(delivery.itemId(), Math.min(delivery.got(), delivery.need()), Integer::sum);
-        }
-        return out;
-    }
 }

@@ -42,9 +42,18 @@ class WarehouseTakeModelTest {
     }
 
     @Test
-    @DisplayName("A4 deliveredCount 给出「这次到手几件」：0 / 部分 / 溢出边界")
-    void deliveredCountReportsGain() {
+    @DisplayName("A3b 🔴 没有回执时的兜底：背包真的变多就算到货（回执被 printer 抢走时的唯一活路）")
+    void deliveredCountWithoutReplyUsesInventoryOnly() {
         assertAll(
+                () -> assertEquals(64, WarehouseTakeModel.deliveredCountWithoutReply(0, 64)),
+                () -> assertEquals(20, WarehouseTakeModel.deliveredCountWithoutReply(44, 64)),
+                () -> assertEquals(0, WarehouseTakeModel.deliveredCountWithoutReply(5, 5), "没变多就是没到货"),
+                () -> assertEquals(0, WarehouseTakeModel.deliveredCountWithoutReply(64, 3), "变少不算负数"));
+    }
+
+    @Test
+    @DisplayName("A4 deliveredCount 给出「这次到手几件」：0 / 部分 / 溢出边界")
+    void deliveredCountReportsGain() {        assertAll(
                 () -> assertEquals(64, WarehouseTakeModel.deliveredCount(0, 0, 64)),
                 () -> assertEquals(20, WarehouseTakeModel.deliveredCount(0, 4, 24)),
                 () -> assertEquals(0, WarehouseTakeModel.deliveredCount(0, 5, 5), "OK 但没动"),

@@ -73,11 +73,11 @@ public final class WarehouseTakeNetwork {
                 PrinterTakePayload.TYPE, PrinterTakePayload.CODEC);
         PayloadChannels.register(s2c, "printer_take_result",
                 PrinterTakeResultPayload.TYPE, PrinterTakeResultPayload.CODEC);
-        try {
-            ClientPlayNetworking.registerGlobalReceiver(
-                    PrinterTakeResultPayload.TYPE, WarehouseTakeNetwork::receive);
-        } catch (RuntimeException duplicate) {
-            LOGGER.warn("[虚空仓库补货] 回执接收端已注册过：{}", duplicate.toString());
+        // 🔴 必须接管：printer 的 mod id 排在前面，它永远先注册这条回执通道（Fabric 先注册者赢）。
+        // 不接管 / 只看返回值不管，表现就是「服务端取走了货、客户端判定一件没到」——
+        // 0.5.7 真机日志：`取走 64 个 铁锭` 紧跟着 `nonce=2 超时无回执`。
+        if (PayloadReceivers.attach(PrinterTakeResultPayload.TYPE, WarehouseTakeNetwork::receive)) {
+            LOGGER.info("[虚空仓库补货] 回执接收器原先被别的模组占用（printer 在场时属正常）：已接管并转发，两边都收得到");
         }
         ClientTickEvents.END_CLIENT_TICK.register(WarehouseTakeNetwork::tick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> forget());
@@ -200,6 +200,18 @@ public final class WarehouseTakeNetwork {
         int status = latestStatus;
         if (status == WarehouseTakeModel.STATUS_NO_REPLY) {
             if (System.currentTimeMillis() - sentAt > WarehouseTakeModel.REPLY_TIMEOUT_MS) {
+                // 🔴 兜底判据：没回执但背包真的变多了 ⇒ 服务端确实把货塞进来了（回执被别的模组
+                // 吃掉 / 丢了）。没有这一条，整条补料链在 printer 在场时会静默失效。
+                int gained = WarehouseTakeModel.deliveredCountWithoutReply(
+                        heldBefore, countInInventory(client, stackOf(activeItemId)));
+                if (gained > 0) {
+                    LOGGER.info("[虚空仓库补货] nonce={} 无回执，但背包多了 {} 件 {} ⇒ 按到货结算",
+                            nonce, gained, activeItemId);
+                    Consumer<Integer> callback = completion;
+                    forget();
+                    finishRequest(callback, gained);
+                    return;
+                }
                 if (!silentRequest) {
                     InfoUtils.printActionbarMessage("message.neko_client.warehouse_take_no_reply");
                 }

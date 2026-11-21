@@ -51,6 +51,25 @@ public final class WarehouseTakeModel {
     }
 
     /**
+     * <b>没有回执</b>时的兜底判据：背包确实变多了就算到货。
+     *
+     * <p>为什么需要：回执可能根本到不了客户端 —— Fabric 的全局接收器是<b>先注册者赢</b>，
+     * 而 {@code printer_take_result} 这条通道 {@code litematica-printer} 抢在前面注册
+     * （mod id 字典序决定初始化顺序）。服务端明明把货塞进了背包，客户端却只能等到超时，
+     * 于是「一件没到货」⇒ 补料链放弃续填。真机表现就是「第一次右键只取货、容器一点没填」。</p>
+     *
+     * <p>口径与 {@link #deliveredCount} 的区别只有一条：<b>不看状态码</b>（没有状态码可看）。
+     * 归因风险存在（这 2 秒里玩家可能自己捡到同种物品），但比「功能整个失效」好得多，
+     * 而且取料这一侧多算一件最多是多要一次货，不会凭空产生物品。</p>
+     *
+     * @param heldBefore 发包前背包里该物品的件数
+     * @param heldAfter  超时那一刻背包里该物品的件数
+     */
+    public static int deliveredCountWithoutReply(int heldBefore, int heldAfter) {
+        return Math.max(0, heldAfter - heldBefore);
+    }
+
+    /**
      * 撞限流时要不要退避重试。
      *
      * <p>只重试 THROTTLED：其它失败态重试没有意义（没货就是没货、规则没开不会自己开），

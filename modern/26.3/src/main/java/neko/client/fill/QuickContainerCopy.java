@@ -795,9 +795,9 @@ public final class QuickContainerCopy implements ClientModInitializer {
         boolean previousQuickShulkerSources = allowQuickShulkerSources;
         recordedTemplate = state.template;
         allowQuickShulkerSources = state.useQuickShulker;
-        // 货已到齐、马上就要真填这一轮 ⇒ 把这一轮会用掉的件数从退料账上扣掉。
-        // 没走到这里（容器在回执到达前被关掉 / 玩家放弃）就一件都不扣，那批货会原样退回仓库。
-        WarehouseReturnQueue.noteRoundApplied(state.report);
+        // 这里不再向退料账本「扣用掉」：账本按「仓库给过多少 − 已退回」记，
+        // 「用掉多少」由背包实际持有量与基线比出来（见 WarehouseReturnQueue#pruneConsumed）。
+        // 少一个需要同步的中间量，也少一个「这一轮没续填就漏账」的坑。
         FillResult result;
         try {
             result = applyTemplate(client, handler, state.success, false);
