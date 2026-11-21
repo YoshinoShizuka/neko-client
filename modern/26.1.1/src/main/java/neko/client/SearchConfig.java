@@ -387,33 +387,53 @@ public final class SearchConfig implements IConfigHandler {
      * 点击事件自己带着<b>点击那一瞬间</b>的修饰键掩码，那份数据一定是对的 ——
      * 原版「Shift 点 = 整组快速移动」读的就是它。完整推导见 {@link FillCombo} 类注释。</p>
      *
+     * <h2>这一轮：键盘键从「一律判否」改成「按键记账」</h2>
+     * <p>0.5.7 及以前，绑定里只要出现非修饰键就在 {@code FillCombo.parse} 里被判成
+     * 「不可用」—— 于是玩家把 {@code Ctrl+Alt+右键} 改成<b>单个按键</b>（例如只绑
+     * {@code R}，或者只绑 {@code LEFT_ALT}）之后，取满一次都不生效，而且日志里
+     * 只有一句「没有鼠标键」。现在三种形态都支持（见 {@link FillCombo} 类注释），
+     * 键盘键那半边由 {@link FillKeyState} 的按键账本回答
+     * （{@code KeyboardHandler#keyPress} 记账：{@code action == 0} 松开、其余按下）。</p>
+     *
      * @param mouseButton 原版 {@code MouseButtonEvent#button()}（26.3 是 1 基，其余 0 基）
      * @param shift       {@code event.hasShiftDown()}
      * @param control     {@code event.hasControlDown()}
      * @param alt         {@code event.hasAltDown()}
-     * @return 组合键不可用（玩家清空了 / 绑了字母键）⇒ 恒 false
+     * @return 组合键不可用（玩家清空了 / 绑了俩鼠标键）⇒ 恒 false；
+     *         绑了键盘键但那些键没按着 ⇒ 也是 false
      */
     public static boolean isFillComboHeld(int mouseButton, boolean shift, boolean control, boolean alt) {
         FillCombo.Combo combo = fillCombo();
         // 🔴 唯一判据。任何「精确判否就再放宽一次」的回退都不许回来 —— 见 0.4.5 事故。
-        boolean matched = FillCombo.matches(combo, mouseButton, shift, control, alt);
-        // 带修饰键的点击、或者已经命中的点击，都留一行原话。
-        if ((shift || control || alt) || matched) {
+        boolean matched = FillCombo.matches(combo, mouseButton, shift, control, alt,
+                FillKeyState.heldCodes(), FillKeyState.heldNames());
+        // 带修饰键的点击、绑了键盘键的组合、或者已经命中的点击，都留一行原话。
+        // 🔴 这一轮补上 needsKeyboard：只绑一个字母键时没有任何修饰键，旧条件会把
+        //    唯一能解释「为什么没命中」的那行日志整条咽掉。
+        if ((shift || control || alt) || matched || combo.needsKeyboard()) {
             int clickedCode = mouseButton - FillCombo.MOUSE_KEY_OFFSET;
+            boolean mouseOk = FillCombo.matchesMouse(combo, mouseButton, shift, control, alt);
             String verdict;
             if (!combo.usable()) {
                 verdict = "未命中：组合键不可用（" + combo.problem() + "）";
-            } else if (combo.mouseCode() != clickedCode) {
-                verdict = "未命中：点的是键码 " + clickedCode + "，绑定的是 " + combo.mouseCode()
-                        + "（绑什么键就是什么键；想用这一击请把 keyFillCombo 的鼠标键改成对应的 BUTTON_n）";
-            } else if (!FillCombo.modifiersMatch(combo, shift, control, alt)) {
-                verdict = "未命中：绑定的修饰键没按全";
+            } else if (!mouseOk) {
+                verdict = combo.hasMouse() && combo.mouseCode() != clickedCode
+                        ? "未命中：点的是键码 " + clickedCode + "，绑定的是 " + combo.mouseCode()
+                        + "（绑什么键就是什么键；想用这一击请把 keyFillCombo 的鼠标键改成对应的 BUTTON_n）"
+                        : "未命中：绑定的修饰键没按全";
+            } else if (!FillCombo.keysHeld(combo, FillKeyState.heldCodes(), FillKeyState.heldNames())) {
+                verdict = "未命中：绑定的键盘键 " + combo.describeKeys() + " 没按着"
+                        + "（当前按着： " + FillKeyState.describe() + "）"
+                        + (FillKeyState.sawAnyPress() ? ""
+                        : "；而且这个会话一次按键都没记到 ⇒ 按键跟踪没挂上（混入未生效）");
             } else {
-                verdict = "命中（精确）";
+                verdict = combo.hasMouse() ? "命中（精确）"
+                        : "命中（单键取满：没绑鼠标键，点哪个键都算）";
             }
-            trace("取满判据：按钮={} → 键码={} 绑定鼠标键={} 组合键={}（{}） "
+            trace("取满判据：按钮={} → 键码={} 绑定鼠标键={} 键盘键={} 组合键={}（{}） "
                             + "Shift={} Ctrl={} Alt={} ⇒ {}",
-                    mouseButton, clickedCode, combo.mouseCode(), fillComboDisplay(),
+                    mouseButton, clickedCode, combo.hasMouse() ? combo.mouseCode() : "未绑定",
+                    combo.describeKeys(), fillComboDisplay(),
                     combo.usable() ? "可用" : "不可用：" + combo.problem(),
                     shift, control, alt, verdict);
         }
@@ -423,13 +443,24 @@ public final class SearchConfig implements IConfigHandler {
     /**
      * 组合键现在能不能用 —— 只给进服那一行日志用。
      *
-     * <p>为什么要打：玩家报「取满没反应」时，第一件事是分辨「绑定里根本没有鼠标键 /
-     * 绑了字母键所以永远不生效」和「绑对了但没按对」。上一轮就是因为没有这一行，
-     * 只能靠猜。</p>
+     * <p>为什么要打：玩家报「取满没反应」时，第一件事是分辨「绑定本身不可用」和
+     * 「绑对了但没按对」。上一轮就是因为没有这一行，只能靠猜。</p>
+     *
+     * <p>现在还要写出「要不要按住某个键盘键」—— 单键取满的玩法就是
+     * 「按着那个键再点格子」，不写出来玩家不会知道还要按着它。</p>
      */
     public static String fillComboStatus() {
         FillCombo.Combo combo = fillCombo();
-        return combo.usable() ? "可用" : "不可用：" + combo.problem();
+        if (!combo.usable()) {
+            return "不可用：" + combo.problem();
+        }
+        if (combo.needsKeyboard()) {
+            return "可用（需按住 " + combo.describeKeys() + " 再点格子）";
+        }
+        if (!combo.hasMouse()) {
+            return "可用（只绑了修饰键，按着它们点任意鼠标键）";
+        }
+        return "可用";
     }
 
     /** 从 malilib 的 {@code IKeybind} 拿「键码 + 键名」，交给纯判据解析 */

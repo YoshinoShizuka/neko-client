@@ -144,11 +144,19 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         box.setVisible(on && neko.client.SearchClientState.isWarehouse());
     }
 
-    /** 屏幕关闭：清客户端状态（服务端的过滤跟着菜单消失，不需要清理包） */
+    /**
+     * 屏幕关闭：清客户端状态（服务端的过滤跟着菜单消失，不需要清理包）。
+     *
+     * <p>顺手把<a href="#voidwarehouseSearch$onKeyPressed">按键账本</a>整份清空：
+     * 玩家按住某个键时切走窗口，操作系统只发失焦、<b>不发 key-up</b> ——
+     * 不清理的话那个键会永远显示「按着」，此后每一次左键点击都被当成取满。
+     * 关界面的这一刻重置，比永久记住一个假的按下状态安全得多。</p>
+     */
     @Inject(method = "removed", at = @At("TAIL"))
     private void voidwarehouseSearch$onRemoved(CallbackInfo ci) {
         this.voidwarehouseSearch$searchBox = null;
         SearchClientState.clear();
+        neko.client.FillKeyState.clear();
     }
 
     /** 每 tick 推进 apply 的尾随防抖 */

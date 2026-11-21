@@ -1,10 +1,14 @@
 package neko.client;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * 「取满组合键」的<b>纯判据</b>：给定「玩家绑了哪些键」+「这一下点的是哪个鼠标键」+
- * 「点击那一瞬间 Shift / Ctrl / Alt 各按着没有」，回答「这一下点击算不算取满」。
+ * 「点击那一瞬间 Shift / Ctrl / Alt 各按着没有」+「其它键盘键现在按着哪些」，
+ * 回答「这一下点击算不算取满」。
  *
  * <h2>为什么单独一个类，而不是写在 {@link SearchConfig} 里</h2>
  * <p>{@code SearchConfig} 的静态初始化就 new 了 malilib 的 {@code ConfigHotkey} ——
@@ -28,19 +32,36 @@ import java.util.List;
  * <p>{@code KeybindMulti.isKeybindHeld()} 也救不了：它的 {@code pressed} 由
  * {@code PRESSED_KEYS.containsAll(scanCodes)} 算出，而 {@code PRESSED_KEYS} 每帧都被
  * {@code reCheckPressedKeys()} 拿同一个坏掉的 {@code isKeyDown} 清理一遍 ——
- * 按住的 Ctrl / Alt 会在下一帧被当成「已经松开」删掉。（1.21.11 的 malilib
- * 走 {@code GLFW.glfwGetKey}，没有这个问题，所以这个坑只在 26.x 上发作。）</p>
+ * 按住的 Ctrl / Alt 会在下一帧被当成「已经松开」删掉。</p>
  *
- * <h2>所以改问谁</h2>
- * <p>问<b>点击事件自己</b>：{@code MouseButtonEvent} 带着<b>点击那一瞬间</b>的修饰键
- * 掩码（原版「Shift 点击 = 整组快速移动」就是读它），那份数据不经过 malilib，
- * 也不靠轮询键盘状态。代价是<b>键盘那半边只能绑修饰键</b> —— 原版只把 Shift / Ctrl /
- * Alt 三位暴露出来，其它字母键没有任何可靠的实时查询入口。所以</p>
- * <ul>
- *   <li>组合键 = <b>恰好一个鼠标键 + 若干修饰键</b>（哪个鼠标键、哪几个修饰键都由玩家定）；</li>
- *   <li>绑了字母键 / 数字键 ⇒ 判否，并在日志里说清楚为什么（见 {@link Combo#problem()}）——
- *       <b>「静默不生效」是上一轮最贵的一课</b>，宁可大声拒绝，也不许默默不响应。</li>
- * </ul>
+ * <h2>那键盘键凭什么能支持（同一轮修复）</h2>
+ * <p>修饰键（Shift / Ctrl / Alt）继续问<b>点击事件自己</b> —— {@code MouseButtonEvent}
+ * 带着<b>点击那一瞬间</b>的修饰键掩码（原版「Shift 点击 = 整组快速移动」就是读它），
+ * 那份数据不经过 malilib，也不靠轮询键盘状态。</p>
+ *
+ * <p>其余键盘键（字母 / 数字 / F 键……）原版<b>没有</b>任何可靠的实时查询入口
+ * （javap 实证：26.3 的 {@code InputConstants.isKeyDown(int)} 就是上面那个坏掉的
+ * {@code ByteBuffer.get(key)}；26.3 连 {@code Screen.keyReleased} 都没有，
+ * 1.21.11 才有）。但键盘事件本身是完整的：五个版本的
+ * {@code KeyboardHandler.keyPress(long, int, KeyEvent)} 都收得到
+ * <b>按下（action != 0）与松开（action == 0）</b>两路。所以键盘键走
+ * 「<b>按键时记账，点击时对账</b>」：{@code MixinKeyboardHandler} 把按下的键丢进
+ * {@link FillKeyState}，点击时把那份账本一起喂进 {@link #matches}。
+ * <b>不轮询、不反射、不碰 malilib 的按下状态。</b></p>
+ *
+ * <h2>合法的组合键有三种形态</h2>
+ * <ol>
+ *   <li><b>一个鼠标键 + 若干修饰键</b>（默认 {@code Ctrl+Alt+右键}）：点那个键就算，
+ *       鼠标键必须<b>逐位相等</b>；</li>
+ *   <li><b>一个键盘键 + 一个鼠标键</b>（例如 {@code R + 左键}）：按着 R 点左键才算；</li>
+ *   <li><b>只有一个键盘键</b>（例如只绑 {@code R}，或只绑 {@code LEFT_ALT}）：
+ *       按着它点<b>任意</b>鼠标键都算 —— 玩家没绑鼠标键，就没有「应该点哪个键」可言。
+ *       0.5.7 及以前这种绑定直接被判成「没有鼠标键 ⇒ 不可用」，于是玩家的
+ *       「单个按键」一次都不生效（真机反馈）。</li>
+ * </ol>
+ * <p>❗形态 3 的「点任意键都行」<b>只发生在没有绑定鼠标键时</b>。
+ * 一旦绑了鼠标键，{@link #matches} 就退回形态 1/2 的严格匹配 ——
+ * 与 0.4.5 那个「绑了左键却让右键生效」的事故是两件不同的事，别混为一谈。</p>
  *
  * <h2>多按了没绑的修饰键算不算</h2>
  * <p>算。malilib 的 {@code allowExtraKeys} 就是这个语义（我们建 {@code KeybindSettings}
@@ -76,7 +97,10 @@ import java.util.List;
  * <p>这不是我编的换算，而是 malilib 自己在「玩家绑键」时用的同一条公式
  * （{@code ConfigButtonKeybind} 里 {@code addKey(input() - 100)}）—— 所以两边必然对得上。
  * 26.3 左键 {@code 1-100=-99}、右键 {@code 3-100=-97}；旧版左键 {@code 0-100=-100}、
- * 右键 {@code 1-100=-99}。各自都与本版本 malilib 的鼠标键码对齐。</p>
+ * 右键 {@code 1-100=-99}。各自都与本版本 malilib 的鼠标键码对齐。键盘键那半边同理：
+ * malilib 存的就是 {@code InputConstants.Key#getValue()}，而
+ * {@code InputConstants.getKey(KeyEvent)} 在五个版本里都是
+ * {@code Type.KEYBOARD.getOrCreate(event.key())} ⇒ <b>码值就是 {@code KeyEvent.key()}</b>。</p>
  */
 final class FillCombo {
 
@@ -92,16 +116,55 @@ final class FillCombo {
     }
 
     /**
+     * 一个「非修饰键」的键盘键：码值 + 键名。
+     *
+     * <p>为什么要同时带名字：码值两边可能各自演化（26.3 是 SDL 的 SDLK、1.21.11 是
+     * GLFW 的键码），而<b>键名从 1.0 起就没变过</b>（{@code LEFT_ALT} /
+     * {@code key.keyboard.left.alt} 去掉前缀后是同一个串）。判据先比码值、再比名字，
+     * 任一对上就算按着 —— 万一哪天某一侧换了编码，功能也不会静默失效。</p>
+     */
+    record Key(int code, String name) {
+    }
+
+    /**
      * 解析结果。<b>不可用也是结果</b>，不是异常 —— 理由写在 {@code problem} 里，
      * 由调用方打进日志。这样「绑错了」和「绑对了但没按」在日志里是两件事。
      *
-     * @param mouseCode 绑定里的那个鼠标键码（{@code problem != null} 时无意义）
+     * @param mouseCode 绑定里的那个鼠标键码（{@code hasMouse == false} 时无意义）
+     * @param hasMouse 有没有绑鼠标键。<b>没绑</b> ⇒ 点哪个鼠标键都算（形态 3）
+     * @param keys      需要「按着」的非修饰键；空表 = 这一形态不需要键盘账本
      * @param problem   null = 可用；否则是「为什么不可用」的中文说明
      */
-    record Combo(int mouseCode, boolean shift, boolean control, boolean alt, String problem) {
+    record Combo(int mouseCode, boolean hasMouse, boolean shift, boolean control, boolean alt,
+                 List<Key> keys, String problem) {
+
+        Combo {
+            keys = keys == null ? List.of() : List.copyOf(keys);
+        }
 
         boolean usable() {
             return this.problem == null;
+        }
+
+        /** 绑了键盘键 ⇒ 命不命中要看「那些键现在按着没有」（日志据此决定要不要解释）。 */
+        boolean needsKeyboard() {
+            return !this.keys.isEmpty();
+        }
+
+        /** 绑定的键盘键名单，只给日志用。 */
+        String describeKeys() {
+            if (this.keys.isEmpty()) {
+                return "无";
+            }
+            StringBuilder text = new StringBuilder();
+            for (Key key : this.keys) {
+                if (text.length() > 0) {
+                    text.append('+');
+                }
+                text.append(key.name() == null || key.name().isEmpty()
+                        ? "码" + key.code() : key.name());
+            }
+            return text.toString();
         }
     }
 
@@ -173,6 +236,7 @@ final class FillCombo {
         boolean shift = false;
         boolean control = false;
         boolean alt = false;
+        List<Key> keyboard = new ArrayList<>();
         for (int i = 0; i < keys.size(); i++) {
             int code = keys.get(i);
             if (isMouseKey(code)) {
@@ -180,10 +244,13 @@ final class FillCombo {
                 mouseCount++;
                 continue;
             }
-            Modifier modifier = modifierOf(names.get(i));
+            String name = names.get(i);
+            Modifier modifier = modifierOf(name);
             if (modifier == null) {
-                return problem("含非修饰键 " + names.get(i)
-                        + "（键盘那一半只支持 Shift / Ctrl / Alt）");
+                // 🔴 这一轮：不再是错误。字母 / 数字 / F 键一律进「要按着的键」表，
+                //    由 FillKeyState 的按键账本回答「现在按着没有」。
+                keyboard.add(new Key(code, name));
+                continue;
             }
             switch (modifier) {
                 case SHIFT -> shift = true;
@@ -191,13 +258,10 @@ final class FillCombo {
                 case ALT -> alt = true;
             }
         }
-        if (mouseCount == 0) {
-            return problem("没有鼠标键（取满要靠点击指定哪一格）");
-        }
         if (mouseCount > 1) {
             return problem("绑了 " + mouseCount + " 个鼠标键（一个指针按不住两个）");
         }
-        return new Combo(mouseCode, shift, control, alt, null);
+        return new Combo(mouseCode, mouseCount == 1, shift, control, alt, keyboard, null);
     }
 
     /**
@@ -219,9 +283,61 @@ final class FillCombo {
     }
 
     /**
-     * 这一下点击算不算「取满组合键」——<b>唯一判据，严格匹配</b>。
+     * 绑定的<b>非修饰键</b>是不是都按着 —— 码值或键名任一对上就算。
      *
-     * <p>鼠标键必须<b>逐位相等</b>：{@code 绑定键码 == 原版按钮号 - 100}。
+     * <p>没绑这类键（绝大多数配置）⇒ 恒 true，一个集合都不用查。</p>
+     */
+    static boolean keysHeld(Combo combo, Set<Integer> heldCodes, Set<String> heldNames) {
+        if (combo == null || !combo.usable()) {
+            return false;
+        }
+        if (combo.keys().isEmpty()) {
+            return true;
+        }
+        for (Key key : combo.keys()) {
+            boolean byCode = heldCodes != null && heldCodes.contains(key.code());
+            boolean byName = heldNames != null && key.name() != null
+                    && heldNames.contains(normalizeName(key.name()));
+            if (!byCode && !byName) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 这一下点击算不算「取满组合键」，<b>并且</b>绑定的键盘键都没按着 ⇒ false。 */
+    static boolean matches(Combo combo, int mouseButton, boolean shift, boolean control, boolean alt,
+                           Set<Integer> heldCodes, Set<String> heldNames) {
+        if (!matchesMouse(combo, mouseButton, shift, control, alt)) {
+            return false;
+        }
+        return keysHeld(combo, heldCodes, heldNames);
+    }
+
+    /**
+     * 不看键盘账本的那一半判据（鼠标键 + 修饰键）。
+     *
+     * <p>绑了键盘键的组合键<b>不能</b>只用这一个 —— 但它独立存在有价值：
+     * 判据日志要靠它区分「这一击错在鼠标/修饰键」还是「错在键盘键没按」。</p>
+     */
+    static boolean matchesMouse(Combo combo, int mouseButton, boolean shift, boolean control, boolean alt) {
+        if (combo == null || !combo.usable()) {
+            return false;
+        }
+        // 绑了鼠标键 ⇒ 逐位相等；没绑 ⇒ 玩家点了就算（形态 3，见类注释）
+        if (combo.hasMouse() && combo.mouseCode() != mouseButton - MOUSE_KEY_OFFSET) {
+            return false;
+        }
+        return modifiersMatch(combo, shift, control, alt);
+    }
+
+    /**
+     * 这一下点击算不算「取满组合键」——<b>不带键盘账本的旧签名</b>。
+     *
+     * <p>等价于「一个键盘键都没按着」。只在两种地方用到：不需要键盘键的组合键
+     * （形态 1）、以及<b>单测</b>里刻意验「绑了键盘键但没人按 ⇒ 不算」。</p>
+     *
+     * <p>鼠标键必须<b>逐位相等</b>（绑了的话）：{@code 绑定键码 == 原版按钮号 - 100}。
      * 0.4.5 曾在这里挂过一条「差 ≤2 也算」的容错回退，结果是绑左键、右键生效；
      * 详见类注释 0.4.5 事故段。<b>不许再加任何形式的按钮号放宽</b>。</p>
      *
@@ -231,16 +347,37 @@ final class FillCombo {
      * @param alt         {@code event.hasAltDown()}
      */
     static boolean matches(Combo combo, int mouseButton, boolean shift, boolean control, boolean alt) {
-        if (combo == null || !combo.usable()) {
-            return false;
+        return matches(combo, mouseButton, shift, control, alt, Set.of(), Set.of());
+    }
+
+    /**
+     * 键名归一化：两边的写法折成同一个串再比。
+     *
+     * <ul>
+     *   <li>malilib：{@code LEFT_ALT} / {@code KEY_A} / {@code KEY_1}</li>
+     *   <li>原版 {@code InputConstants}：{@code key.keyboard.left.alt} /
+     *       {@code key.keyboard.a} / {@code key.keyboard.1}</li>
+     * </ul>
+     * <p>去掉 {@code key.keyboard.} 前缀与 {@code key_} 前缀、小写、{@code .} 换成
+     * {@code _} 之后两边都是 {@code left_alt} / {@code a} / {@code 1}。</p>
+     */
+    static String normalizeName(String name) {
+        if (name == null) {
+            return "";
         }
-        if (combo.mouseCode() != mouseButton - MOUSE_KEY_OFFSET) {
-            return false;
+        String text = name.trim().toLowerCase(Locale.ROOT);
+        if (text.startsWith("key.keyboard.")) {
+            text = text.substring("key.keyboard.".length());
+        } else if (text.startsWith("key.mouse.")) {
+            text = text.substring("key.mouse.".length());
         }
-        return modifiersMatch(combo, shift, control, alt);
+        if (text.startsWith("key_")) {
+            text = text.substring("key_".length());
+        }
+        return text.replace('.', '_');
     }
 
     private static Combo problem(String text) {
-        return new Combo(0, false, false, false, text);
+        return new Combo(0, false, false, false, false, List.of(), text);
     }
 }

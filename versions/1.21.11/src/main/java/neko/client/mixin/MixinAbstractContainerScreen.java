@@ -148,6 +148,7 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     private void voidwarehouseSearch$onRemoved(CallbackInfo ci) {
         this.voidwarehouseSearch$searchBox = null;
         SearchClientState.clear();
+        neko.client.FillKeyState.clear();
     }
 
     /** 每 tick 推进 apply 的尾随防抖 */

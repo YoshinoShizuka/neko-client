@@ -4,6 +4,7 @@
   "package": "neko.client.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "MixinKeyboardHandler",
     "AccessorGuiBase",
     "AccessorScreen",
     "MixinAbstractContainerScreen",

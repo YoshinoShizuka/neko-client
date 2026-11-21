@@ -17,6 +17,7 @@ import neko.voidwarehouse.restock.PrinterQueryResultPayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -50,6 +51,17 @@ import java.util.Set;
  * 只有最近 {@value #DEMAND_TTL_TICKS} tick 内被问过，才按
  * {@value #REFRESH_INTERVAL_TICKS} tick 的节奏刷新。<b>没人看就不发</b> ——
  * 这条通道是服务端资源，不该为关掉的界面持续发包。</p>
+ *
+ * <h2>🔴 这一轮：为什么「复用 printer 缓存」那条路必须<b>推它一把</b></h2>
+ * <p>printer 的 {@code VoidWarehouseMaterialNetwork.tick()} 每
+ * {@code REFRESH_INTERVAL_TICKS = 100} tick（5 秒）才问服务端一次，而且它<b>没有</b>
+ * 「立即刷新」的公开入口。玩家打开本界面后最坏要等 5 秒 + 一次往返 + 我们 0.5 秒的搬运，
+ * 才是第一眼数字 —— 这就是「已有数量的比对非常慢」的真正来源（不是查询本身慢，
+ * 服务端按请求 id 查桶索引，一次往返而已）。</p>
+ * <p>所以在界面刚打开的这一刻把它的 5 秒闸归零、直接调一次 {@code tick()}
+ * （{@link #kickPrinter()}，反射调它自己的公开静态方法）。<b>只推这一下</b>：
+ * 之后仍然让它按 5 秒走，不去抢它的节奏 —— 抢了会让服务端回 {@code THROTTLED}，
+ * 而 printer 收到非 {@code OK} 会把缓存整份清空，界面上数字先闪成 0。</p>
  *
  * <h2>为什么客户端不做全仓扫描</h2>
  * <p>服务端查询已经改成按请求 id 查 {@code VoidWarehouseData} 的物品索引；
@@ -89,6 +101,19 @@ public final class WarehouseStock {
     private static Object printerCache;
     private static Method printerAmountOfMethod;
     private static Method printerIsReadyMethod;
+    /** printer 的查询管家类（它的 {@code tick()} 是 public static）。 */
+    private static final String PRINTER_NETWORK_CLASS =
+            "me.aleksilassila.litematica.printer.integration.voidwarehouse.VoidWarehouseMaterialNetwork";
+    private static Method printerTickMethod;
+    /** printer 里的「上次问了没有」时间位；归零就能让它立刻问一次。 */
+    private static Field printerGateField;
+    private static boolean printerKickResolved;
+    /** 下一次 {@link #tick} 要不要推 printer 一把（界面刚打开时置位，只用一次）。 */
+    private static boolean printerKickPending;
+    /** 本次「有人在看」是从哪一 tick 开始的；首屏日志用它算等了多少 tick。 */
+    private static long firstDemandTick = Long.MIN_VALUE;
+    /** 首屏那一行日志只打一次（换界面会重新置位）。 */
+    private static boolean loggedFirstSnapshot;
 
     /**
      * 当前库存快照：id → 数量。
@@ -119,8 +144,14 @@ public final class WarehouseStock {
     private static final Set<String> WATCHED = new LinkedHashSet<>();
     /** 上一次整份搬进来的 printer 数字已经换成 {@code amounts} 自己了，这里只需要节奏位。 */
     private static long lastFingerprintTick = Long.MIN_VALUE;
-    /** 指纹别每 tick 都比一次（上百个 id × 反射调用，没必要 20 Hz）。 */
-    private static final int FINGERPRINT_INTERVAL_TICKS = 10;
+    /**
+     * 搬运节奏：{@value} tick（0.25 秒）。
+     *
+     * <p>搬一次的代价是「{@code WATCHED.size()} 次反射 invoke」，几百条也就几百微秒；
+     * 而它的延迟直接叠在首屏上（printer 一收到回执就写缓存，我们却要等到下一次搬运
+     * 才看得见）。0.5.7 的 10 tick 让首屏平白多等半秒，这里收到 5。</p>
+     */
+    private static final int FINGERPRINT_INTERVAL_TICKS = 5;
     private static volatile long lastDemandTick = Long.MIN_VALUE;
 
     private static int nextNonce = 1;
@@ -221,8 +252,17 @@ public final class WarehouseStock {
         if (client.level == null) {
             return;
         }
-        lastDemandTick = client.level.getGameTime();
-        lastFingerprintTick = Long.MIN_VALUE;   // 首屏别等 0.5 秒才出数
+        long now = client.level.getGameTime();
+        // 「上一刻还没人在看」= 界面刚打开 / 刚换了一张表。这一刻值得特殊对待：
+        // 首屏要立刻有数，之后才谈得上按节奏刷新。
+        boolean opening = !demandFresh(now);
+        lastDemandTick = now;
+        lastFingerprintTick = Long.MIN_VALUE;   // 首屏别等 0.25 秒才出数
+        if (opening) {
+            firstDemandTick = now;
+            loggedFirstSnapshot = false;
+            printerKickPending = true;
+        }
         synchronized (WATCHED) {
             for (String id : ids) {
                 if (id == null || id.isEmpty()) {
@@ -246,6 +286,10 @@ public final class WarehouseStock {
             WATCHED.clear();
         }
         lastFingerprintTick = Long.MIN_VALUE;
+        // 🔴 同时退回「没人在看」：换图往往就发生在同一个界面里（材料列表点另一个投影），
+        //    不重置时间戳的话紧接着的 noteDemand 会被当成「一直有人在看」，
+        //    于是这一次换图<b>不会</b>推 printer 一把 —— 新图又要等它 5 秒。
+        lastDemandTick = Long.MIN_VALUE;
     }
 
     /**
@@ -381,9 +425,76 @@ public final class WarehouseStock {
         if (next.equals(amounts) && isReady == ready) {
             return;
         }
+        if (isReady && !ready) {
+            logFirstSnapshot(now, next.size());
+        }
         amounts = Map.copyOf(next);
         ready = isReady;
         snapshotVersion++;
+    }
+
+    /**
+     * 让 litematica-printer <b>立刻</b>查一次库存（只在界面刚打开时调一次）。
+     *
+     * <p>反射调它自己的 {@code public static void tick()}，并把它的「上次询问时间」
+     * 归零 —— 否则它自己的 5 秒闸会把这个调用直接挡回来（源码实证：
+     * {@code if (now - lastRequestTick < REFRESH_INTERVAL_TICKS) return;}）。</p>
+     *
+     * <p>拿不到就安静退回「等它自己的节奏」，只留一行日志：这是一条<b>加速</b>路径，
+     * 不是功能前提 —— printer 换版本改了内部结构时，界面应该变慢，而不是变坏。</p>
+     */
+    private static void kickPrinter() {
+        if (!printerKickResolved) {
+            printerKickResolved = true;
+            try {
+                Class<?> network = Class.forName(PRINTER_NETWORK_CLASS, false,
+                        WarehouseStock.class.getClassLoader());
+                printerTickMethod = network.getMethod("tick");
+                try {
+                    Field gate = network.getDeclaredField("lastRequestTick");
+                    gate.setAccessible(true);
+                    printerGateField = gate;
+                } catch (NoSuchFieldException | RuntimeException noGate) {
+                    // 没有这个字段也能推：它的闸一次一过，只是这一下可能被挡住
+                    printerGateField = null;
+                }
+            } catch (Throwable throwable) {
+                printerTickMethod = null;
+                LOGGER.info("[虚空仓库库存] 读不到 litematica-printer 的库存查询入口，"
+                        + "首屏改由它自己的 5 秒节奏驱动：{}", throwable.toString());
+            }
+        }
+        if (printerTickMethod == null) {
+            return;
+        }
+        try {
+            if (printerGateField != null) {
+                printerGateField.setLong(null, 0L);
+            }
+            printerTickMethod.invoke(null);
+            LOGGER.info("[虚空仓库库存] 已推 litematica-printer 立刻查一次库存（不等它自己的 5 秒节奏）");
+        } catch (Throwable throwable) {
+            printerTickMethod = null;
+            LOGGER.info("[虚空仓库库存] 推动 litematica-printer 查询失败，退回它自己的节奏：{}",
+                    throwable.toString());
+        }
+    }
+
+    /** 首屏那一行：等了多少 tick 才看到第一个数字 —— 「还是慢」就靠它定位。 */
+    private static void logFirstSnapshot(long now, int size) {
+        if (loggedFirstSnapshot) {
+            return;
+        }
+        loggedFirstSnapshot = true;
+        long waited = firstDemandTick == Long.MIN_VALUE || now < firstDemandTick
+                ? -1L : now - firstDemandTick;
+        LOGGER.info("[虚空仓库库存] 已有数量首次到达：{} 条，开屏后 {} tick（来源={}）",
+                size, waited, ownsChannel ? "自有查询通道" : "litematica-printer 缓存");
+    }
+
+    private static long currentTick() {
+        Minecraft client = Minecraft.getInstance();
+        return client == null || client.level == null ? 0L : client.level.getGameTime();
     }
 
     /** 最近 {@value #DEMAND_TTL_TICKS} tick 内有没有人问过库存（= 材料列表还开着）。 */
@@ -410,7 +521,14 @@ public final class WarehouseStock {
             // 唯一能做的是定时把它缓存里的数字批量搬进本地快照（变了才让界面重算）。
             // 🔴 没人看材料列表就彻底停：否则关掉界面后还会每 0.5 秒做几百次反射。
             if (!demandFresh(now)) {
+                printerKickPending = false;
                 return;
+            }
+            if (printerKickPending) {
+                printerKickPending = false;
+                kickPrinter();
+                // 回执随时可能到：把搬运节奏位清掉，下一 tick 就搬（别等 0.25 秒）
+                lastFingerprintTick = Long.MIN_VALUE;
             }
             refreshFromPrinter(now);
             return;
@@ -426,7 +544,11 @@ public final class WarehouseStock {
         if (now < rejectedUntilTick) {
             return;
         }
-        if (lastRequestTick != Long.MIN_VALUE && now - lastRequestTick < REFRESH_INTERVAL_TICKS) {
+        // 🔴 首屏例外：这一整局还没问过任何一次时，第一次查询不受「2 秒间隔」限制。
+        //    间隔是给「持续刷新」用的；把它套在首屏上等于让玩家白等 2 秒。
+        boolean firstPaint = !ready && lastRequestTick == Long.MIN_VALUE;
+        if (!firstPaint && lastRequestTick != Long.MIN_VALUE
+                && now - lastRequestTick < REFRESH_INTERVAL_TICKS) {
             return;
         }
         if (!demandFresh(now)) {
@@ -509,6 +631,9 @@ public final class WarehouseStock {
             }
             next.merge(id, value, Long::sum);
         }
+        if (!ready) {
+            logFirstSnapshot(currentTick(), next.size());
+        }
         amounts = Map.copyOf(next);
         ready = true;
         snapshotVersion++;
@@ -573,6 +698,9 @@ public final class WarehouseStock {
     private static void clear() {
         clearSnapshot();
         forgetDemand();
+        printerKickPending = false;
+        firstDemandTick = Long.MIN_VALUE;
+        loggedFirstSnapshot = false;
         lastDemandTick = Long.MIN_VALUE;
         lastRequestTick = Long.MIN_VALUE;
         rejectedUntilTick = Long.MIN_VALUE;

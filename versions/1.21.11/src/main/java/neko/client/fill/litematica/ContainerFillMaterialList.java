@@ -193,6 +193,9 @@ public final class ContainerFillMaterialList extends MaterialListBase {
         this.lastScan = scan;
         this.title = ContainerTitle.of(scan.names());
         this.builtAtVersion = WarehouseStock.snapshotVersion();
+        // 换表时把表头节流的时钟清掉：否则新表的第一屏会被上一张表留下的时间戳
+        // 挡住最多 1 秒（「刚打开时表头迟迟不动」的一种）。
+        lastHeaderTick = Long.MIN_VALUE;
         this.setMaterialListEntries(entries);
         // 登记需求 ⇒ 仓库快照自己会去拉；回执到了 tick 里只重算「已有」。
         // 先清旧的：换了一张投影之后，上一份清单的物品不该继续被问（也会让快照里留垃圾键）。
@@ -213,16 +216,21 @@ public final class ContainerFillMaterialList extends MaterialListBase {
      * 否则仓库每 5 秒一刷，玩家正翻着列表就被拉回顶部，感觉整页都在卡。</p>
      */
     public void refreshAvailable() {
-        this.builtAtVersion = WarehouseStock.snapshotVersion();
         if (!this.recountTotals()) {
+            // 合计没变（只是快照换了一份同样的数字）：这次版本号就当消费掉了
+            this.builtAtVersion = WarehouseStock.snapshotVersion();
             return;
         }
         Minecraft client = Minecraft.getInstance();
         long now = client == null || client.level == null ? 0L : client.level.getGameTime();
         if (lastHeaderTick != Long.MIN_VALUE && now - lastHeaderTick < HEADER_INTERVAL_TICKS) {
+            // 🔴 被节流挡下的这一次<b>不</b>消费版本号：下一 tick 接着来。
+            //    0.5.7 在这里先把 builtAtVersion 标成最新的，于是「数字到了、
+            //    表头却一直停在旧值」—— 要等下一次变化才补上。
             return;
         }
         lastHeaderTick = now;
+        this.builtAtVersion = WarehouseStock.snapshotVersion();
         if (this.completionListener != null) {
             this.completionListener.onTaskCompleted();
         }

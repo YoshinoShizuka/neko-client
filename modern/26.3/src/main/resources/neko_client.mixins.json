@@ -7,7 +7,8 @@
     "AccessorGuiBase",
     "AccessorScreen",
     "MixinAbstractContainerScreen",
-    "MixinClientPacketListener"
+    "MixinClientPacketListener",
+    "MixinKeyboardHandler"
   ],
   "mixins": [],
   "server": [],

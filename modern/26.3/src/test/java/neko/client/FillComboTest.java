@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 正确行为写死，于是单测 / jar 断言 / 真机取货全绿，玩家却报「实际生效的是右键」。
  * <b>功能可用性与语义正确性必须分开验</b>。D 组现已整组反过来：真机样本
  * 「绑 {@code -99} + 按住 Ctrl+Alt + {@code 按钮=3(-97)}」必须 <b>false</b>。</p>
+ *
+ * <p><b>这一轮又把 B3 / B4 反过来一次</b>（这次是真的改需求，不是放宽）：
+ * 玩家把组合键改成「单个按键」之后取满一次都不生效，因为旧口径要求「必须有鼠标键」、
+ * 且「非修饰键一律判否」。现在「没绑鼠标键」= 点任意键都算、「绑了键盘键」= 那些键要按着
+ * （账本由 {@code FillKeyState} 提供）。<b>断言一条都没删</b>：B3 保留「俩鼠标键判否」，
+ * B4 从「判否」改成「可用且键名进表」，D5 的「不可用样本」换成真正不可用的那种。</p>
  *
  * <p>键码约定（malilib）：鼠标键 = {@code 原版按钮号 - 100}，所以 26.3 左键
  * {@code 1-100=-99}、右键 {@code 3-100=-97}；其余版本左键 {@code 0-100=-100}、
@@ -117,29 +124,38 @@ class FillComboTest {
     }
 
     @Test
-    @DisplayName("B3 没有鼠标键 / 有俩鼠标键 ⇒ 都不可用（取满得靠点击定位，且按不住两个）")
+    @DisplayName("B3 没有鼠标键 ⇒ 可用（单键取满）；俩鼠标键 ⇒ 仍判否（一个指针按不住两个）")
     void parseMouseCount() {
         FillCombo.Combo none = FillCombo.parse(
                 List.of(ANY_KEY, ANY_KEY + 1), List.of("LEFT_CONTROL", "LEFT_ALT"));
+        FillCombo.Combo single = FillCombo.parse(List.of(ANY_KEY), List.of("KEY_R"));
         FillCombo.Combo two = FillCombo.parse(
                 List.of(ANY_KEY, MOUSE_LEFT_263, MOUSE_LEFT_OLD),
                 List.of("LEFT_CONTROL", "MOUSE_LEFT", "MOUSE_RIGHT"));
         assertAll(
-                () -> assertFalse(none.usable()),
-                () -> assertTrue(none.problem().contains("没有鼠标键")),
+                () -> assertTrue(none.usable(), () -> "只绑修饰键也要能用，实际：" + none.problem()),
+                () -> assertFalse(none.hasMouse(), "没绑鼠标键 ⇒ 点哪个键都算"),
+                () -> assertTrue(single.usable(), () -> "单个键盘键必须可用，实际：" + single.problem()),
+                () -> assertFalse(single.hasMouse()),
+                () -> assertEquals(1, single.keys().size(), "那个键要进「必须按着」的表"),
                 () -> assertFalse(two.usable()),
                 () -> assertTrue(two.problem().contains("2 个鼠标键")));
     }
 
     @Test
-    @DisplayName("B4 绑了字母键 ⇒ 不可用，并把那个键名带进理由（原版看不见字母键的实时状态）")
+    @DisplayName("B4 绑了字母键 ⇒ 可用，且那个键进「必须按着」的表（不再判否）")
     void parseNonModifier() {
         FillCombo.Combo combo = FillCombo.parse(
                 List.of(ANY_KEY, MOUSE_LEFT_263), List.of("KEY_A", "MOUSE_LEFT"));
         assertAll(
-                () -> assertFalse(combo.usable()),
-                () -> assertTrue(combo.problem().contains("KEY_A"),
-                        () -> "理由里必须带出到底是哪个键 —— 否则玩家只能盲猜，实际：" + combo.problem()));
+                () -> assertTrue(combo.usable(), () -> "字母键 + 鼠标键必须可用，实际：" + combo.problem()),
+                () -> assertTrue(combo.hasMouse()),
+                () -> assertEquals(MOUSE_LEFT_263, combo.mouseCode()),
+                () -> assertEquals(1, combo.keys().size()),
+                () -> assertEquals("KEY_A", combo.keys().get(0).name(),
+                        "键名要留着 —— 码值对不上时靠它兜底"),
+                () -> assertTrue(combo.describeKeys().contains("KEY_A"), "日志要能说出是哪个键"),
+                () -> assertTrue(combo.needsKeyboard()));
     }
 
     @Test
@@ -276,8 +292,10 @@ class FillComboTest {
     @Test
     @DisplayName("D5 侧键 / 中键 / 不可用 / null 组合键一律不命中")
     void unusableAndSideButtonsNeverMatch() {
+        // 🔴 这一轮：KEY_A + 鼠标键现在是<b>可用</b>的组合，不能再当「不可用样本」；
+        //    换成真正不可用的那一种（绑了俩鼠标键）。
         FillCombo.Combo broken = FillCombo.parse(
-                List.of(ANY_KEY, MOUSE_LEFT_263), List.of("KEY_A", "MOUSE_LEFT"));
+                List.of(MOUSE_LEFT_263, MOUSE_RIGHT_263), List.of("MOUSE_LEFT", "MOUSE_RIGHT"));
         assertAll(
                 () -> assertFalse(FillCombo.matches(ctrlAltLeft(), BTN_MIDDLE_263, false, true, true),
                         "中键(2→-98) 不许命中"),
@@ -285,6 +303,81 @@ class FillComboTest {
                         "侧键(8→-92) 不许命中"),
                 () -> assertFalse(FillCombo.matches(broken, BTN_LEFT_263, false, true, true)),
                 () -> assertFalse(FillCombo.matches(null, BTN_LEFT_263, false, true, true)));
+    }
+
+    // ------------------------------------------------------------ E 组：单键取满
+
+    /** 键盘键码：判据只认「非负」这个性质，具体值不重要 */
+    private static final int KEY_R_CODE = 340;
+    private static final int KEY_LEFT_ALT_CODE = 341;
+
+    private static FillCombo.Combo singleKey() {
+        return FillCombo.parse(List.of(KEY_R_CODE), List.of("KEY_R"));
+    }
+
+    private static FillCombo.Combo keyPlusLeft() {
+        return FillCombo.parse(List.of(KEY_R_CODE, MOUSE_LEFT_263), List.of("KEY_R", "MOUSE_LEFT"));
+    }
+
+    @Test
+    @DisplayName("E1 单键取满：按着那个键点任意鼠标键都算；没按着就一个都不算")
+    void singleKeyMatchesAnyButtonWhenHeld() {
+        Set<Integer> held = Set.of(KEY_R_CODE);
+        assertAll(
+                () -> assertTrue(FillCombo.matches(singleKey(), BTN_LEFT_263, false, false, false,
+                                held, Set.of()), "左键"),
+                () -> assertTrue(FillCombo.matches(singleKey(), BTN_RIGHT_263, false, false, false,
+                                held, Set.of()), "右键 —— 玩家没绑鼠标键，就没有「该点哪个」"),
+                () -> assertTrue(FillCombo.matches(singleKey(), BTN_MIDDLE_263, false, false, false,
+                                held, Set.of()), "中键"),
+                () -> assertFalse(FillCombo.matches(singleKey(), BTN_LEFT_263, false, false, false,
+                                Set.of(), Set.of()), "没按着绑定键 ⇒ 不许取满（否则点一下就取满）"),
+                () -> assertFalse(FillCombo.matches(singleKey(), BTN_LEFT_263, false, false, false),
+                        "不带账本的旧签名 = 一个键都没按着 ⇒ 也是 false"));
+    }
+
+    @Test
+    @DisplayName("E2 键盘键 + 鼠标键：鼠标键仍然严格，键盘键必须按着")
+    void keyPlusMouseIsStrict() {
+        Set<Integer> held = Set.of(KEY_R_CODE);
+        assertAll(
+                () -> assertTrue(FillCombo.matches(keyPlusLeft(), BTN_LEFT_263, false, false, false,
+                                held, Set.of()), "按着 R 点左键 ⇒ 命中"),
+                () -> assertFalse(FillCombo.matches(keyPlusLeft(), BTN_RIGHT_263, false, false, false,
+                                held, Set.of()), "按着 R 点右键 ⇒ 不许命中（绑了左键就是左键）"),
+                () -> assertFalse(FillCombo.matches(keyPlusLeft(), BTN_LEFT_263, false, false, false,
+                        Set.of(), Set.of()), "没按 R ⇒ 不许命中"));
+    }
+
+    @Test
+    @DisplayName("E3 码值对不上时按名字兜底（两边编码万一分叉，功能也不会静默失效）")
+    void nameFallbackSavesTheDay() {
+        Set<String> byName = Set.of(FillCombo.normalizeName("key.keyboard.r"));
+        Set<Integer> wrongCode = Set.of(KEY_R_CODE + 999);
+        assertAll(
+                () -> assertTrue(FillCombo.keysHeld(singleKey(), wrongCode, byName),
+                        "码值不同、名字相同 ⇒ 算按着"),
+                () -> assertFalse(FillCombo.keysHeld(singleKey(), wrongCode, Set.of()),
+                        "两边都对不上 ⇒ 不算"),
+                () -> assertEquals("left_alt", FillCombo.normalizeName("LEFT_ALT")),
+                () -> assertEquals("left_alt", FillCombo.normalizeName("key.keyboard.left.alt")),
+                () -> assertEquals("a", FillCombo.normalizeName("KEY_A")),
+                () -> assertEquals("a", FillCombo.normalizeName("key.keyboard.a")),
+                () -> assertEquals("", FillCombo.normalizeName(null)));
+    }
+
+    @Test
+    @DisplayName("E4 只绑修饰键（没有鼠标键）：按着它点任意键都算，少按不算")
+    void modifierOnlyCombo() {
+        FillCombo.Combo onlyAlt = FillCombo.parse(List.of(KEY_LEFT_ALT_CODE), List.of("LEFT_ALT"));
+        assertAll(
+                () -> assertTrue(onlyAlt.usable()),
+                () -> assertFalse(onlyAlt.hasMouse()),
+                () -> assertFalse(onlyAlt.needsKeyboard(), "修饰键不算「键盘账本」那一类"),
+                () -> assertTrue(FillCombo.matches(onlyAlt, BTN_LEFT_263, false, false, true)),
+                () -> assertTrue(FillCombo.matches(onlyAlt, BTN_RIGHT_263, false, false, true)),
+                () -> assertFalse(FillCombo.matches(onlyAlt, BTN_LEFT_263, false, false, false),
+                        "Alt 没按着 ⇒ 判否"));
     }
 
     @Test
