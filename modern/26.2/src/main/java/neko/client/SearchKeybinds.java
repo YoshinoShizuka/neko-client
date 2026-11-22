@@ -59,6 +59,9 @@ public final class SearchKeybinds {
         SearchConfig.OPEN_CONTAINER_MATERIALS.getKeybind()
                 .setCallback(new OpenContainerMaterialsCallback());
         SearchConfig.OPEN_WAREHOUSE.getKeybind().setCallback(new OpenWarehouseCallback());
+        // 快速丢弃（0.5.9）：Ctrl+Q 丢 1 个、Shift+Q 丢整格，只对虚空仓库内容格生效
+        SearchConfig.DROP_ONE.getKeybind().setCallback(new DropCallback(false));
+        SearchConfig.DROP_STACK.getKeybind().setCallback(new DropCallback(true));
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -160,6 +163,30 @@ public final class SearchKeybinds {
                 return false;
             }
             return WarehouseOpenNetwork.requestOpen(Minecraft.getInstance());
+        }
+    }
+
+    /**
+     * 快速丢弃：对着虚空仓库的一格按下去，物品从仓库掉到地上。
+     *
+     * <p>所有门禁（是不是仓库、搜索框是否聚焦、鼠标在不在内容格）都在
+     * {@link WarehouseDrop#drop} 里 —— 回调只负责把「这一次是丢 1 个还是整格」传下去。
+     * 返回 {@code false} 时按键会继续交给界面，所以搜索框里按这两个组合键仍能正常输入。</p>
+     */
+    private static final class DropCallback implements IHotkeyCallback {
+
+        private final boolean wholeStack;
+
+        private DropCallback(boolean wholeStack) {
+            this.wholeStack = wholeStack;
+        }
+
+        @Override
+        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
+            if (action != KeyAction.PRESS) {
+                return false;
+            }
+            return WarehouseDrop.drop(Minecraft.getInstance(), this.wholeStack);
         }
     }
 

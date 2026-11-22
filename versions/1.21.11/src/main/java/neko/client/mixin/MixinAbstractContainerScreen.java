@@ -143,6 +143,19 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
         box.setVisible(on && neko.client.SearchClientState.isWarehouse());
     }
 
+    /** 内容区左上角：{@code leftPos/topPos} 是 protected，只有混入拿得到（快速丢弃算悬停格用） */
+    @Unique
+    @Override
+    public int vwsearch$getGuiLeft() {
+        return this.leftPos;
+    }
+
+    @Unique
+    @Override
+    public int vwsearch$getGuiTop() {
+        return this.topPos;
+    }
+
     /** 屏幕关闭：清客户端状态（服务端的过滤跟着菜单消失，不需要清理包） */
     @Inject(method = "removed", at = @At("TAIL"))
     private void voidwarehouseSearch$onRemoved(CallbackInfo ci) {

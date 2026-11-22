@@ -167,6 +167,26 @@ public final class SearchConfig implements IConfigHandler {
             HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
+     * 快速丢弃：对着虚空仓库的一格按下去，物品从仓库掉到地上（0.5.9）。
+     *
+     * <p>两条都是<b>动作</b>热键，不是开关：{@code dropOne} 丢 1 个，
+     * {@code dropStack} 丢掉这一格的全部。默认值沿用 QuickCraft 的
+     * Ctrl+Q / Shift+Q，但语义是仓库特化的 —— 仓库一格可能上万件，
+     * 「丢同类」在这里没有意义（一格就是一种），所以 Ctrl+Q 改成「丢 1 个」。</p>
+     *
+     * <p>只用带修饰键的组合：裸 {@code Q} 会与原版丢弃键、以及界面里的搜索框输入
+     * 三面撞车，不值得为了少按一个键去接管它。</p>
+     */
+    public static final ConfigHotkey DROP_ONE = new ConfigHotkey(
+            "dropOneHotkey", SearchConfigJson.DEFAULT_KEY_DROP_ONE,
+            HOTKEY_SETTINGS).apply(PREFIX);
+
+    /** 快速丢弃（整格）：Shift+Q，从仓库扣掉这一格并丢到地上。 */
+    public static final ConfigHotkey DROP_STACK = new ConfigHotkey(
+            "dropStackHotkey", SearchConfigJson.DEFAULT_KEY_DROP_STACK,
+            HOTKEY_SETTINGS).apply(PREFIX);
+
+    /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
@@ -177,7 +197,7 @@ public final class SearchConfig implements IConfigHandler {
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
                     FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
-                    OPEN_WAREHOUSE);
+                    OPEN_WAREHOUSE, DROP_ONE, DROP_STACK);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -196,7 +216,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> GUI_HOTKEYS =
             List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
-                    OPEN_WAREHOUSE);
+                    OPEN_WAREHOUSE, DROP_ONE, DROP_STACK);
 
     /**
      * 🔴 把开关热键的「切换提示」也翻成中文。
@@ -255,6 +275,8 @@ public final class SearchConfig implements IConfigHandler {
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
             OPEN_CONTAINER_MATERIALS.setHotkeyStringValue(values.keyOpenContainerMaterials());
             OPEN_WAREHOUSE.setHotkeyStringValue(values.keyOpenWarehouse());
+            DROP_ONE.setHotkeyStringValue(values.keyDropOne());
+            DROP_STACK.setHotkeyStringValue(values.keyDropStack());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -274,7 +296,9 @@ public final class SearchConfig implements IConfigHandler {
                 OPEN_GUI.getHotkeyStringValue(),
                 OPEN_RECIPES.getHotkeyStringValue(),
                 OPEN_CONTAINER_MATERIALS.getHotkeyStringValue(),
-                OPEN_WAREHOUSE.getHotkeyStringValue()));
+                OPEN_WAREHOUSE.getHotkeyStringValue(),
+                DROP_ONE.getHotkeyStringValue(),
+                DROP_STACK.getHotkeyStringValue()));
 
         Path path = file();
         try {

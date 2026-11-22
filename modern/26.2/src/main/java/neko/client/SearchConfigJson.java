@@ -63,6 +63,16 @@ final class SearchConfigJson {
     static final String DEFAULT_KEY_OPEN_WAREHOUSE = "";
 
     /**
+     * 快速丢弃（0.5.9）：Ctrl+Q = 丢 1 个，Shift+Q = 丢掉这一格全部。
+     *
+     * <p>沿用 QuickCraft 的两个组合键，但只带修饰键 —— 裸 {@code Q} 会同时撞上
+     * 原版丢弃与搜索框输入，接管它得不偿失。这两个默认值只影响新生成的配置，
+     * 老配置缺字段时也会回落到它们。</p>
+     */
+    static final String DEFAULT_KEY_DROP_ONE = "LEFT_CONTROL,Q";
+    static final String DEFAULT_KEY_DROP_STACK = "LEFT_SHIFT,Q";
+
+    /**
      * 🔴 取满组合键<b>刻意给了默认值</b>（与上面三条相反，这是唯一例外）。
      *
      * <p>0.4.3 之前这个手势是写死的 Ctrl+Alt+左键。这里若也留空，老玩家升级后
@@ -108,12 +118,34 @@ final class SearchConfigJson {
                   String keyOpenGui,
                   String keyOpenRecipes,
                   String keyOpenContainerMaterials,
-                  String keyOpenWarehouse) {
+                  String keyOpenWarehouse,
+                  String keyDropOne,
+                  String keyDropStack) {
 
         /**
-         * 旧的 10 参写法：新热键默认未绑定。
+         * 旧的 11 参写法：两个丢弃热键回落到默认值。
          *
-         * <p>留着它，老单测 / 调用点不必因为多一条热键就全改一遍。</p>
+         * <p>留着它，老单测 / 调用点不必因为多两条热键就全改一遍。</p>
+         */
+        Values(boolean searchBox,
+               boolean fillGesture,
+               boolean silenceChat,
+               boolean projectionFill,
+               String keySearchBox,
+               String keyFillGesture,
+               String keyFillCombo,
+               String keyOpenGui,
+               String keyOpenRecipes,
+               String keyOpenContainerMaterials,
+               String keyOpenWarehouse) {
+            this(searchBox, fillGesture, silenceChat, projectionFill, keySearchBox,
+                    keyFillGesture, keyFillCombo, keyOpenGui, keyOpenRecipes,
+                    keyOpenContainerMaterials, keyOpenWarehouse,
+                    DEFAULT_KEY_DROP_ONE, DEFAULT_KEY_DROP_STACK);
+        }
+
+        /**
+         * 更旧的 10 参写法：新增的三条热键全部回落默认值。
          */
         Values(boolean searchBox,
                boolean fillGesture,
@@ -155,7 +187,8 @@ final class SearchConfigJson {
                     DEFAULT_PROJECTION_FILL,
                     DEFAULT_KEY_SEARCH_BOX, DEFAULT_KEY_FILL_GESTURE,
                     DEFAULT_KEY_FILL_COMBO, DEFAULT_KEY_OPEN_GUI, DEFAULT_KEY_OPEN_RECIPES,
-                    DEFAULT_KEY_OPEN_CONTAINER_MATERIALS, DEFAULT_KEY_OPEN_WAREHOUSE);
+                    DEFAULT_KEY_OPEN_CONTAINER_MATERIALS, DEFAULT_KEY_OPEN_WAREHOUSE,
+                    DEFAULT_KEY_DROP_ONE, DEFAULT_KEY_DROP_STACK);
         }
 
         /**
@@ -192,7 +225,10 @@ final class SearchConfigJson {
                 readKey(json, "keyOpenGui", DEFAULT_KEY_OPEN_GUI),
                 readKey(json, "keyOpenRecipes", DEFAULT_KEY_OPEN_RECIPES),
                 readKey(json, "keyOpenContainerMaterials", DEFAULT_KEY_OPEN_CONTAINER_MATERIALS),
-                readKey(json, "keyOpenWarehouse", DEFAULT_KEY_OPEN_WAREHOUSE));
+                readKey(json, "keyOpenWarehouse", DEFAULT_KEY_OPEN_WAREHOUSE),
+                // 与 fillCombo 同一条规矩：字段缺失 = 回落默认键；字段在但清空 = 玩家主动关掉
+                readKeyKeepingEmpty(json, "keyDropOne", DEFAULT_KEY_DROP_ONE),
+                readKeyKeepingEmpty(json, "keyDropStack", DEFAULT_KEY_DROP_STACK));
     }
 
     /**
@@ -209,6 +245,7 @@ final class SearchConfigJson {
                   "_readme_silenceChat": "silenceChat = true 时，客户端直接丢弃虚空仓库发来的聊天提示（中文前缀 [虚空仓库]、英文前缀 [Void Warehouse]、配方本不带前缀的 └ 续行）。只影响这一台客户端的显示，不改动服务端行为，也清不掉已经显示过的历史消息。默认 false。",
                   "_readme_projectionFill": "projectionFill = true 时开启投影容器填充：右键投影里的容器，打开后按投影内容逐格填充；缺料会自动向虚空仓库取货。默认 false（新功能，不抢右键）。需要服务端 carpet-Neko-Addition 1.0.17+ 且打开 voidWarehouse / voidWarehouseRestock。",
                   "_readme_openWarehouse": "keyOpenWarehouse 是「按键打开虚空仓库」：只在非界面状态按一下生效，服务端开界面（标题 / 菜单与右键入口完全一致）。默认留空 = 不绑键。需要服务端 carpet-Neko-Addition 1.0.17+ 且打开 voidWarehouse 规则；规则没开会给一句动作栏提示。",
+                  "_readme_drop": "keyDropOne / keyDropStack 是「在虚空仓库界面对着某一格快速丢弃」：Ctrl+Q 丢 1 个，Shift+Q 丢掉这一格全部（单次最多 4096 件，剩下的再按一次）。只对前 5 行仓库内容格生效，导航行与玩家背包不参与；搜索框正在输入时让路。需要服务端 carpet-Neko-Addition 1.0.17+（第 29 次原地替换起支持）。",
                   "searchBox": %s,
                   "fillGesture": %s,
                   "silenceChat": %s,
@@ -219,13 +256,16 @@ final class SearchConfigJson {
                   "keyOpenGui": "%s",
                   "keyOpenRecipes": "%s",
                   "keyOpenContainerMaterials": "%s",
-                  "keyOpenWarehouse": "%s"
+                  "keyOpenWarehouse": "%s",
+                  "keyDropOne": "%s",
+                  "keyDropStack": "%s"
                 }
                 """.formatted(values.searchBox(), values.fillGesture(), values.silenceChat(),
                 values.projectionFill(),
                 values.keySearchBox(), values.keyFillGesture(), values.keyFillCombo(),
                 values.keyOpenGui(), values.keyOpenRecipes(),
-                values.keyOpenContainerMaterials(), values.keyOpenWarehouse());
+                values.keyOpenContainerMaterials(), values.keyOpenWarehouse(),
+                values.keyDropOne(), values.keyDropStack());
     }
 
     /** 缺字段、类型不对（例如手改成字符串 {@code "false"}）一律回落到默认值 */

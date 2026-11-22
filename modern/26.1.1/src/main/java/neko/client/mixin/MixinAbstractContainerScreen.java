@@ -145,6 +145,22 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     }
 
     /**
+     * 内容区左上角：{@code leftPos/topPos} 是 protected 字段，只有混入拿得到。
+     * 快速丢弃用它把 {@code slot.x/y} 换算成屏幕坐标，判断鼠标悬停在哪一格。
+     */
+    @Unique
+    @Override
+    public int vwsearch$getGuiLeft() {
+        return this.leftPos;
+    }
+
+    @Unique
+    @Override
+    public int vwsearch$getGuiTop() {
+        return this.topPos;
+    }
+
+    /**
      * 屏幕关闭：清客户端状态（服务端的过滤跟着菜单消失，不需要清理包）。
      *
      * <p>顺手把<a href="#voidwarehouseSearch$onKeyPressed">按键账本</a>整份清空：

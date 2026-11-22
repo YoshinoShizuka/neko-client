@@ -27,4 +27,17 @@ public interface SearchScreenAccess {
 
     /** 按当前配置刷新这个界面：搜索框显隐、焦点、服务端过滤 */
     void vwsearch$applyFeatureState();
+
+    /**
+     * 界面内容区左上角的屏幕坐标（X）。
+     *
+     * <p>「快速丢弃」要判断鼠标悬停在哪一格，而 {@code leftPos/topPos} 是
+     * {@code AbstractContainerScreen} 的 protected 字段 —— 不在 mixin 里的代码读不到。
+     * 让 mixin 顺手把这两个值递出来，比再写一个 accessor mixin + 注册进五份
+     * mixins.json 要省得多。</p>
+     */
+    int vwsearch$getGuiLeft();
+
+    /** 界面内容区左上角的屏幕坐标（Y），理由同 {@link #vwsearch$getGuiLeft()}。 */
+    int vwsearch$getGuiTop();
 }
