@@ -106,6 +106,9 @@ public final class VoidWarehouseSearchClient implements ClientModInitializer {
         // 虚空仓库只读库存快照（0.5.6）：「容器填充物合计」界面的「已有」有一半来自这里。
         // printer 在场时不抢接收器，直接读它同步好的缓存。
         WarehouseStock.init(c2s, s2c);
+        // 按键打开虚空仓库（0.5.8）：两条 open_warehouse* 通道 + 回执接收 + nonce 配对。
+        // 没有 tick 监听器 —— 按键本身是边沿触发，服务端那条 250 ms 限流只是兜底。
+        WarehouseOpenNetwork.init(c2s, s2c);
 
         // 投影容器填充（0.5.4）：两个 tick 监听器自己按 projectionFill 开关门禁，
         // 未安装 litematica 时 getTemplateSnapshot 恒 null（不会崩）。

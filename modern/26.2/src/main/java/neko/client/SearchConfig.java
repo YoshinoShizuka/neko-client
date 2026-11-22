@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * 两个功能开关 + 一个聊天静音开关 + 四个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
+ * 两个功能开关 + 一个聊天静音开关 + 一个投影填充开关 + 五个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
  *
  * <h2>为什么是 {@code ConfigBooleanHotkeyed}</h2>
  * <p>它是「布尔开关 + 一个热键」的合体：在配置界面里显示成<b>一行</b>
@@ -39,7 +39,7 @@ import java.util.List;
  * <h2>落盘</h2>
  * <p>仍然是 {@code config/neko-client.json}，格式由
  * {@link SearchConfigJson} 这一层负责（纯函数、可单测）。本类只做
- * 「malilib 配置对象 ↔ 那八个字段」的搬运，并实现 {@link IConfigHandler}
+ * 「malilib 配置对象 ↔ 那十一个字段」的搬运，并实现 {@link IConfigHandler}
  * 让 malilib 的 {@code ConfigManager} 也能触发加载 / 保存。</p>
  */
 public final class SearchConfig implements IConfigHandler {
@@ -154,6 +154,19 @@ public final class SearchConfig implements IConfigHandler {
             HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
+     * 按键打开虚空仓库（服务端通道 1.0.17 / 客户端 0.5.8，默认未绑定）。
+     *
+     * <p>这不是一个开关而是一次<b>动作</b>：按下就向服务端发一条
+     * {@code open_warehouse}，成功时由原版开屏包把界面开出来。热键本身仍用
+     * {@link #HOTKEY_SETTINGS}（{@code Context.ANY} + {@code cancel=false}），
+     * 但回调里要求 {@code screen == null} —— 界面开着的按键属于界面输入，
+     * 也让仓库里的搜索框能照常抢焦点。</p>
+     */
+    public static final ConfigHotkey OPEN_WAREHOUSE = new ConfigHotkey(
+            "openWarehouse", SearchConfigJson.DEFAULT_KEY_OPEN_WAREHOUSE,
+            HOTKEY_SETTINGS).apply(PREFIX);
+
+    /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
@@ -163,7 +176,8 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
-                    FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS);
+                    FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
+                    OPEN_WAREHOUSE);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -181,7 +195,8 @@ public final class SearchConfig implements IConfigHandler {
      * 「取满」开关只回答开不开，<b>按哪个键</b>在这一页。</p>
      */
     public static final List<IHotkey> GUI_HOTKEYS =
-            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS);
+            List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
+                    OPEN_WAREHOUSE);
 
     /**
      * 🔴 把开关热键的「切换提示」也翻成中文。
@@ -239,6 +254,7 @@ public final class SearchConfig implements IConfigHandler {
             OPEN_GUI.setHotkeyStringValue(values.keyOpenGui());
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
             OPEN_CONTAINER_MATERIALS.setHotkeyStringValue(values.keyOpenContainerMaterials());
+            OPEN_WAREHOUSE.setHotkeyStringValue(values.keyOpenWarehouse());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -257,7 +273,8 @@ public final class SearchConfig implements IConfigHandler {
                 FILL_COMBO.getHotkeyStringValue(),
                 OPEN_GUI.getHotkeyStringValue(),
                 OPEN_RECIPES.getHotkeyStringValue(),
-                OPEN_CONTAINER_MATERIALS.getHotkeyStringValue()));
+                OPEN_CONTAINER_MATERIALS.getHotkeyStringValue(),
+                OPEN_WAREHOUSE.getHotkeyStringValue()));
 
         Path path = file();
         try {

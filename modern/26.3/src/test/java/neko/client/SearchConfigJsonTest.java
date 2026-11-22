@@ -396,6 +396,43 @@ class SearchConfigJsonTest {
                 () -> assertEquals(written, SearchConfigJson.parse(legacy), "老字段必须被忽略，不能让解析失败"),
                 () -> assertTrue(text.contains("\"projectionFill\": true")));
     }
+    // ------------------------------- 0.5.8：按键打开虚空仓库的热键
+
+    @Test
+    @DisplayName("I1 🔴 keyOpenWarehouse 默认未绑定；老配置缺字段也必须是未绑定（不许替玩家抢键）")
+    void openWarehouseHotkeyDefaultsUnbound() {
+        assertAll(
+                () -> assertEquals("", SearchConfigJson.Values.defaults().keyOpenWarehouse()),
+                () -> assertEquals("", SearchConfigJson.parse("{}").keyOpenWarehouse()),
+                () -> assertEquals("",
+                        SearchConfigJson.parse("{\"keyOpenGui\": \"V\"}").keyOpenWarehouse(),
+                        "老配置没有这一项时不能猜一个键出来"));
+    }
+
+    @Test
+    @DisplayName("I2 keyOpenWarehouse 能穿过 render→parse；模板里带 _readme_openWarehouse")
+    void openWarehouseHotkeyRoundTrips() {
+        SearchConfigJson.Values written = new SearchConfigJson.Values(
+                true, true, false, false, "", "", "LEFT_CONTROL,LEFT_ALT,BUTTON_2", "", "", "", "GRAVE");
+        String text = SearchConfigJson.render(written);
+        assertAll(
+                () -> assertEquals(written, SearchConfigJson.parse(text)),
+                () -> assertEquals("GRAVE", SearchConfigJson.parse(text).keyOpenWarehouse()),
+                () -> assertTrue(text.contains("\"keyOpenWarehouse\": \"GRAVE\"")),
+                () -> assertTrue(text.contains("\"_readme_openWarehouse\""),
+                        "手改配置的人必须看得到这条热键管什么"),
+                () -> assertTrue(text.contains("未绑定"),
+                        "_readme 要写明留空等于不绑键"));
+    }
+
+    @Test
+    @DisplayName("I3 手填组合键（Ctrl+Shift+R）不许被单键判据吃掉")
+    void openWarehouseComboPreserved() {
+        SearchConfigJson.Values values = SearchConfigJson.parse(
+                "{\"keyOpenWarehouse\": \"  LEFT_CONTROL,LEFT_SHIFT,R  \"}");
+        assertEquals("LEFT_CONTROL,LEFT_SHIFT,R", values.keyOpenWarehouse());
+    }
+
     // ------------------------------------------------------------ 小工具
 
     private static SearchConfigJson.Values values(boolean searchBox, boolean fillGesture) {

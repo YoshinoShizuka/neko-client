@@ -18,7 +18,8 @@ import neko.client.fill.litematica.ContainerFillMaterialList;
  *
  * <h2>三件事</h2>
  * <ol>
- *   <li><b>挂回调</b>：两个开关热键按下时翻开关，打开配置界面的热键按下时开界面；</li>
+ *   <li><b>挂回调</b>：两个开关热键翻开关，三个打开界面的热键开界面，「打开虚空仓库」
+ *       则只发一条请求给服务端（界面由原版开屏包开）；</li>
  *   <li><b>登记热键表</b>：{@code addHotkeysForCategory} 让它们出现在配置界面的
  *       「热键」页里，并按 mod 分组；</li>
  *   <li><b>{@code updateUsedKeys()}</b>：把用到的键告诉 malilib，让它优先于原版
@@ -57,6 +58,7 @@ public final class SearchKeybinds {
         SearchConfig.OPEN_RECIPES.getKeybind().setCallback(new OpenRecipesCallback());
         SearchConfig.OPEN_CONTAINER_MATERIALS.getKeybind()
                 .setCallback(new OpenContainerMaterialsCallback());
+        SearchConfig.OPEN_WAREHOUSE.getKeybind().setCallback(new OpenWarehouseCallback());
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -140,6 +142,24 @@ public final class SearchKeybinds {
             }
             GuiBase.openGui(new SearchConfigGui());
             return true;
+        }
+    }
+
+    /**
+     * 按键打开虚空仓库：一次按下 = 一个包，界面由服务端开。
+     *
+     * <p>不看 {@link SearchClientState#isSearchFocused()} 而看 {@code screen == null}：
+     * 这条动作<b>只允许在游戏内</b>触发，界面开着的按键（包括仓库里搜索框的快捷键）
+     * 一律不消费，交给界面自己处理。</p>
+     */
+    private static final class OpenWarehouseCallback implements IHotkeyCallback {
+
+        @Override
+        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
+            if (action != KeyAction.PRESS) {
+                return false;
+            }
+            return WarehouseOpenNetwork.requestOpen(Minecraft.getInstance());
         }
     }
 
