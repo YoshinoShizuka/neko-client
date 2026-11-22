@@ -1,5 +1,6 @@
 package neko.client;
 
+import fi.dy.masa.malilib.event.InputEventHandler;
 import fi.dy.masa.malilib.gui.GuiConfigsBase;
 import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
@@ -55,9 +56,11 @@ public class SearchConfigGui extends GuiConfigsBase implements IConfigGuiAllTab 
 
     @Override
     public void initGui() {
-        super.initGui();
-        // 清掉上一页残留的「正在改键」状态与改键监听器，否则换页后按钮可能还挂着旧回调
+        // 🔴 clearOptions() 必须排在 super.initGui() 前面：它会把 hotkeyChangeListeners
+        //    整表清空，而这张表正是 super 建列表时由每个热键控件填进去的。
+        //    顺序写反 ⇒ 表永远是空的 ⇒ 关界面时 malilib 的「重建按键映射」闸门不通过。
         this.clearOptions();
+        super.initGui();
 
         int x = 10;
         int y = 26;
@@ -120,14 +123,34 @@ public class SearchConfigGui extends GuiConfigsBase implements IConfigGuiAllTab 
 
     @Override
     protected void onSettingsChanged() {
+        // 🔴 必须先走 super：malilib 只在这里调 IKeybindManager.updateUsedKeys()，
+        //    它是「按键 → 热键」映射的唯一重建入口。覆盖时不调 super ⇒ 界面里刚改的
+        //    新键永远进不了映射（旧键反而仍有效），玩家看到的就是「改了键按了没反应」。
+        super.onSettingsChanged();
+        // super 里那次重建被 hotkeyChangeListeners.size() > 0 守着，而我们的换页会清空
+        // 这张表；这里再显式重建一次，幂等，不依赖 malilib 的内部守卫。
+        InputEventHandler.getKeybindManager().updateUsedKeys();
         SearchConfig.saveToFile();
         SearchClientState.applyFeatureStateToCurrentScreen();
+        // 诊断：改键落盘后打一行「现在映射里是哪几个键」，真机日志可直接对照
+        VoidWarehouseSearchClient.LOGGER.info(
+                "[虚空仓库搜索] 设置已保存并重建按键映射：openRecipes='{}' openWarehouse='{}' "
+                        + "openGui='{}' fillCombo='{}'",
+                SearchConfig.OPEN_RECIPES.getHotkeyStringValue(),
+                SearchConfig.OPEN_WAREHOUSE.getHotkeyStringValue(),
+                SearchConfig.OPEN_GUI.getHotkeyStringValue(),
+                SearchConfig.FILL_COMBO.getHotkeyStringValue());
     }
 
     @Override
     public void removed() {
-        SearchConfig.saveToFile();
+        // super 会先 applyPendingModifications()，再走 onSettingsChanged()（重建按键映射）
         super.removed();
+        // 🔴 再无条件重建一次：五个版本的 malilib 对「改键算不算配置已修改」判法不一，
+        //    只靠 super 里那道脏标记闸门会漏；updateUsedKeys() 幂等，开销可忽略。
+        InputEventHandler.getKeybindManager().updateUsedKeys();
+        // 兜底：这一轮没有任何「挂起修改」时，也把当前值写回文件
+        SearchConfig.saveToFile();
     }
 
     /** 分类。名字全走翻译键，「全部」那条由 malilib 提供 */

@@ -78,6 +78,10 @@ public final class SearchKeybinds {
         //    也不要手动 updateUsedKeys()：malilib 在初始化完成与每次进世界时会自己重建。
         InputEventHandler.getKeybindManager()
                 .registerKeybindProvider(new NekoKeybindProvider());
+        // 诊断：provider 注册成功 + 登记了多少条（按 V 没反应时先看这一行）
+        VoidWarehouseSearchClient.LOGGER.info(
+                "[虚空仓库搜索] 热键 provider 已注册：{} 条（含 fillCombo 的展示项）",
+                SearchConfig.OPTIONS.size());
     }
 
     /** 翻一个布尔开关，并把结果说一声 */

@@ -87,7 +87,10 @@ public final class SearchConfig implements IConfigHandler {
             true,
             false,
             false,
-            false,
+            // 🔴 cancel 必须是 true：玩家很可能把「打开配方本」绑到 T / E 这类原版键上。
+            //    false 时这一下会**同时**触发我们的界面和原版动作（T 打开聊天），
+            //    看起来就是「按了没反应」或「弹出聊天」。界面类热键本来就该独占那一击。
+            true,
             true);
 
     /** 容器界面里的搜索框开关（热键默认未绑定，由玩家自己设） */
@@ -276,6 +279,15 @@ public final class SearchConfig implements IConfigHandler {
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
             OPEN_CONTAINER_MATERIALS.setHotkeyStringValue(values.keyOpenContainerMaterials());
             OPEN_WAREHOUSE.setHotkeyStringValue(values.keyOpenWarehouse());
+            // 诊断（0.5.9 热键排查）：文件里写的 vs 真正进到 keybind 里的，一次看清
+            VoidWarehouseSearchClient.LOGGER.info(
+                    "[虚空仓库搜索] 配置读取 {} 存在={} fillCombo='{}'→'{}' openGui='{}'→'{}' "
+                            + "openRecipes='{}'→'{}' openWarehouse='{}'→'{}'",
+                    path, true,
+                    values.keyFillCombo(), FILL_COMBO.getHotkeyStringValue(),
+                    values.keyOpenGui(), OPEN_GUI.getHotkeyStringValue(),
+                    values.keyOpenRecipes(), OPEN_RECIPES.getHotkeyStringValue(),
+                    values.keyOpenWarehouse(), OPEN_WAREHOUSE.getHotkeyStringValue());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
