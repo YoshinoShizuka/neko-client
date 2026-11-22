@@ -11,6 +11,8 @@ import fi.dy.masa.malilib.util.InfoUtils;
 import fi.dy.masa.malilib.util.StringUtils;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ChatScreen;
+import neko.client.fill.QuickClientScreenAccess;
 import neko.client.fill.litematica.ContainerFillMaterialList;
 
 /**
@@ -69,12 +71,13 @@ public final class SearchKeybinds {
         // 「按下的那一刻就取满某格」这种没有目标格的语义，而且会和点击重复触发。
         // 它仍然要进下面的 category：这样配置界面里能显示它、能查撞键。
 
-        IKeybindManager manager = InputEventHandler.getKeybindManager();
-        manager.addHotkeysForCategory(CATEGORY,
-                StringUtils.translate("neko_client.hotkeys.category"),
-                SearchConfig.OPTIONS);
-        // 🔴 必须调：malilib 靠它算出「哪些键归我们」，进而让这些键优先于原版绑定
-        manager.updateUsedKeys();
+        // 🔴 必须走 provider，不能只调 addHotkeysForCategory：
+        //    后者只喂「配置界面的热键列表」（allKeybinds），完全不碰「按键码 → keybind」
+        //    的 hotkeyMap；而 updateUsedKeys() 会先清空 hotkeyMap、再只遍历 provider
+        //    重建它。少了这一步，热键就是「看得见、绑得上、按不动」。
+        //    也不要手动 updateUsedKeys()：malilib 在初始化完成与每次进世界时会自己重建。
+        InputEventHandler.getKeybindManager()
+                .registerKeybindProvider(new NekoKeybindProvider());
     }
 
     /** 翻一个布尔开关，并把结果说一声 */
@@ -97,6 +100,11 @@ public final class SearchKeybinds {
             }
             // 正在搜索框里打字：这一下属于输入，不属于开关（字符会照常进框）
             if (SearchClientState.isSearchFocused()) {
+                return false;
+            }
+            // 聊天框里同理：绑成字母键时不能一边打字一边翻开关
+            // 🔴 不直接读 Minecraft#screen：26.2+ 它搬进了 Gui.screen()
+            if (QuickClientScreenAccess.currentScreen(Minecraft.getInstance()) instanceof ChatScreen) {
                 return false;
             }
             this.config.toggleBooleanValue();

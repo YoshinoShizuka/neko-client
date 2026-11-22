@@ -70,6 +70,26 @@ public final class SearchConfig implements IConfigHandler {
             false,                         // cancel：不吞按键（否则会吃掉输入框里的字符）
             true);                         // allowEmpty：允许玩家把热键清空
 
+    /**
+     * 「只在游戏内（没有界面）响应」的一组热键设置，给那四个「打开某个界面」的热键用。
+     *
+     * <p>它们本来就必须在没有界面时才按（{@code OPEN_WAREHOUSE} 的回调还额外检查了
+     * {@code screen == null}），用 {@code Context.ANY} 唯一的效果是：玩家在聊天框里
+     * 打一个字母，如果恰好绑成了那个字母，就会在打字时弹出一个界面。收紧到
+     * {@code INGAME} 之后这件事从根上不会发生。</p>
+     *
+     * <p>开关类的热键（搜索框 / 取满手势）仍然用 {@link #HOTKEY_SETTINGS}：它们
+     * 的设计场景就是「界面开着时切一下」，不能只在游戏内响应。</p>
+     */
+    private static final KeybindSettings INGAME_HOTKEY_SETTINGS = KeybindSettings.create(
+            KeybindSettings.Context.INGAME,
+            KeyAction.PRESS,
+            true,
+            false,
+            false,
+            false,
+            true);
+
     /** 容器界面里的搜索框开关（热键默认未绑定，由玩家自己设） */
     public static final ConfigBooleanHotkeyed SEARCH_BOX = new ConfigBooleanHotkeyed(
             "searchBox", SearchConfigJson.DEFAULT_SEARCH_BOX,
@@ -130,7 +150,7 @@ public final class SearchConfig implements IConfigHandler {
 
     /** 打开配置界面的热键（默认未绑定：没有热键也能从 Mod Menu / 其它 malilib 配置界面进来） */
     public static final ConfigHotkey OPEN_GUI = new ConfigHotkey(
-            "openGui", SearchConfigJson.DEFAULT_KEY_OPEN_GUI, HOTKEY_SETTINGS).apply(PREFIX);
+            "openGui", SearchConfigJson.DEFAULT_KEY_OPEN_GUI, INGAME_HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
      * 打开「配方本」界面的热键（默认未绑定）。
@@ -140,7 +160,8 @@ public final class SearchConfig implements IConfigHandler {
      * 而且和「打开配置界面」放在同一页里，玩家找得到。</p>
      */
     public static final ConfigHotkey OPEN_RECIPES = new ConfigHotkey(
-            "openRecipes", SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES, HOTKEY_SETTINGS).apply(PREFIX);
+            "openRecipes", SearchConfigJson.DEFAULT_KEY_OPEN_RECIPES,
+            INGAME_HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
      * 打开「容器填充物合计」界面的热键（0.5.6，默认未绑定）。
@@ -151,7 +172,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final ConfigHotkey OPEN_CONTAINER_MATERIALS = new ConfigHotkey(
             "openContainerMaterials", SearchConfigJson.DEFAULT_KEY_OPEN_CONTAINER_MATERIALS,
-            HOTKEY_SETTINGS).apply(PREFIX);
+            INGAME_HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
      * 按键打开虚空仓库（服务端通道 1.0.17 / 客户端 0.5.8，默认未绑定）。
@@ -164,7 +185,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final ConfigHotkey OPEN_WAREHOUSE = new ConfigHotkey(
             "openWarehouse", SearchConfigJson.DEFAULT_KEY_OPEN_WAREHOUSE,
-            HOTKEY_SETTINGS).apply(PREFIX);
+            INGAME_HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
      * 全部条目，按配置界面「全部」页的顺序。
