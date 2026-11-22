@@ -14,6 +14,7 @@
 6. **仓库补货**（0.5.3）—— 投影容器填充缺料时自动从虚空仓库取货；不再提供独立热键选项。
 7. **投影容器填充**（0.5.4，批次 A）—— 装了 Litematica 时，右键投影里的箱子/漏斗/发射器等容器，打开后按投影内容**逐格填充**；缺料自动接仓库补货，补不齐会在聊天里报出**还缺多少**（0.5.5）；仓库多给的填充物在填完后自动退回仓库（同一轮）。默认关闭，与 quickcraft 共存时各读各的开关。
 8. **容器填充物合计**（0.5.6）—— 一张表：整张原理图**所有容器里要求的物品**加起来，对照**背包 + 虚空仓库**看还缺多少。不需要开着容器、也不需要正在填充。入口是 **Litematica 材料列表工具栏上的「容器材料」按钮**（0.5.7），另有一个默认未绑定的热键。
+9. **按键打开虚空仓库**（0.5.8）—— 自己绑一个热键，在游戏内按一下服务端就开仓库界面；标题、页码、盒模式与右键入口完全一致。默认**未绑定**，不抢任何键；界面已经开着时按它不会重置分页。需要服务端 carpet-Neko-Addition 1.0.17+ 并打开 `voidWarehouse` 规则，规则没开会有一句动作栏提示。
 
 ![Side](https://img.shields.io/badge/side-%E7%BA%AF%E5%AE%A2%E6%88%B7%E7%AB%AF-informational) ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.x-2ea043)
 
@@ -135,13 +136,13 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 
 | 客户端版本 | jar | 构建管线 |
 | --- | --- | --- |
-| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.7.jar` | fabric-loom（非 remap，Java 25） |
-| 1.21.11 | `neko-client-mc1.21.11-0.5.7.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
+| 26.3 / 26.2 / 26.1.2 / 26.1.1 | `neko-client-mc<ver>-0.5.8.jar` | fabric-loom（非 remap，Java 25） |
+| 1.21.11 | `neko-client-mc1.21.11-0.5.8.jar` | fabric-loom-remap + officialMojangMappings（Java 21） |
 
 | 位置 | 需要什么 |
 | --- | --- |
 | 客户端 | 本 mod（按版本选 jar）+ **malilib**（同版本，硬依赖）+ Fabric API |
-| 服务端 | `carpet-Neko-Addition` 1.0.16+（对应版本 jar；本 mod 不是它的硬依赖，没有它时搜索框自动隐藏） |
+| 服务端 | `carpet-Neko-Addition` 1.0.16+（对应版本 jar；本 mod 不是它的硬依赖，没有它时搜索框自动隐藏）。**按键打开仓库需要 1.0.17+** 且打开 `voidWarehouse` |
 | 纯原版客户端 | 什么都不用装，看不到任何变化 |
 
 > 🔴 **0.3.0 起需要 malilib**（masa 系模组的公共库，装过 MiniHUD / Litematica / Tweakeroo 的玩家已经有）。原版按键绑定只在没有界面时派发，而这两个键恰恰都是在仓库界面里按的 —— 换 malilib 才能让热键在界面打开时也响应，顺带得到一个和 MiniHUD 同款的配置界面。
@@ -170,6 +171,7 @@ mod id `neko_client`，构件名 `neko-client`，五个 Minecraft 版本各一�
 | 打开配置界面 / `openGui` | **未绑定** | 打开本模组的 malilib 配置界面 |
 | 打开配方本 / `openRecipes` | **未绑定** | 打开配方本浏览界面（0.4.8 新增；0.5.0 起带图标/滚动/搜索；随地可用，不必开着仓库） |
 | 容器填充物合计 / `openContainerMaterials` | **未绑定** | 打开整张原理图的容器填充物合计表（0.5.6）：需要 / 已有（背包 + 虚空仓库）/ 缺失三列，随地可用。0.5.7 起主入口是材料列表工具栏的「容器材料」按钮，这条热键是备用的 |
+| 打开虚空仓库 / `openWarehouse`（0.5.8） | **未绑定** | 只在**非界面**状态响应：一次按下 = 一次请求，界面由服务端开。已经开着时不重置分页；重连不发旧 nonce |
 
 各开关热键默认留空，是因为 `H` / `J` / `V` 这种单字母键在整合包里几乎必然与别的模组撞车。`fillCombo` 是唯一给默认值的例外 —— 它是**手势本身**，留空等于把「可配置化」做成功能删除。
 
@@ -251,7 +253,8 @@ JDK 25、Gradle 9.7.0（wrapper 已固定）。多子工程：`common/`（纯逻
 
 | 服务端 \ 客户端 | 装了本 mod | 没装 / 老版本 |
 | --- | --- | --- |
-| carpet-Neko-Addition 1.0.16+（对应版本） | 搜索框可用 | 无任何影响 |
+| carpet-Neko-Addition 1.0.17+（对应版本） | 搜索框可用；按键打开仓库可用（需 `voidWarehouse` 规则） | 无任何影响 |
+| carpet-Neko-Addition 1.0.16（对应版本） | 搜索框可用；按键打开仓库给一句「服务端不支持」 | 无任何影响 |
 | 其它版本 / 没装 carpet | 搜索框自动隐藏（`canSend` 判定） | 无任何影响 |
 | 客户端没装 malilib | **模组不会加载**（硬依赖，Fabric 直接弹缺依赖） | — |
 
