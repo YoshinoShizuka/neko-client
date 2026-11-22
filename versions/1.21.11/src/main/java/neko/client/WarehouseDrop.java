@@ -2,6 +2,7 @@ package neko.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import neko.client.fill.QuickClientScreenAccess;
@@ -43,6 +44,34 @@ public final class WarehouseDrop {
     private static final Logger LOGGER = LoggerFactory.getLogger("neko-client");
 
     private WarehouseDrop() {
+    }
+
+    /**
+     * 容器界面的 {@code keyPressed} 入口：<b>Shift+Q</b> 时执行整格丢弃并吞掉按键。
+     *
+     * <h2>为什么走界面按键而不是 malilib 热键</h2>
+     * <p>0.5.9 首版把 Shift+Q 注册成 {@code ConfigHotkey}，真机上回调一次都没进
+     * （日志里连一条 {@code [虚空仓库丢弃]} 都没有），而原版 Q 照样把物品丢了 1 个 ——
+     * 说明按键到了界面、只是 malilib 那条链没派发。原版自己就是在
+     * {@code AbstractContainerScreen#keyPressed} 里读 {@code options.keyDrop}，
+     * 我们挂在同一个方法上，拿到的键、修饰键、吞键时机都最可靠。</p>
+     *
+     * @return {@code true} = 已接管，调用方必须 {@code cancel}（否则原版会再丢 1 个）
+     */
+    public static boolean handleKey(KeyEvent event) {
+        if (event == null) {
+            return false;
+        }
+        if (!WarehouseDropModel.isDropKey(event.key(), event.hasShiftDown(), event.hasControlDown())) {
+            return false;
+        }
+        if (!SearchClientState.isWarehouse()) {
+            return false;
+        }
+        drop(Minecraft.getInstance());
+        // 即使这一下没丢出去（悬停不在内容格），也要吞掉：原版 Q 会丢 1 个，
+        // 那不是玩家按 Shift+Q 想要的结果。
+        return true;
     }
 
     /**

@@ -82,6 +82,30 @@ class WarehouseDropModelTest {
                 () -> assertFalse(WarehouseDropModel.canDrop(true, true, false), "不可见格不能丢"));
     }
 
+    // ------------------------------------------------------------ E 组：按键判据
+
+    @Test
+    @DisplayName("E1 🔴 只有 Q + Shift（且不带 Ctrl）才算快速丢弃")
+    void dropKeyIsShiftOnly() {
+        assertAll(
+                () -> assertTrue(WarehouseDropModel.isDropKey(WarehouseDropModel.KEY_Q, true, false)),
+                () -> assertFalse(WarehouseDropModel.isDropKey(WarehouseDropModel.KEY_Q, false, false),
+                        "裸 Q 是原版的「丢 1 个」，不能被我们接管"),
+                () -> assertFalse(WarehouseDropModel.isDropKey(WarehouseDropModel.KEY_Q, false, true),
+                        "Ctrl+Q 是原版的「丢一组」，同样不接管"),
+                () -> assertFalse(WarehouseDropModel.isDropKey(WarehouseDropModel.KEY_Q, true, true),
+                        "Ctrl+Shift+Q 混按交给原版，别吞也别丢整格"));
+    }
+
+    @Test
+    @DisplayName("E2 其它键一律不算（P / W / 0）")
+    void otherKeysAreNotDrop() {
+        assertAll(
+                () -> assertFalse(WarehouseDropModel.isDropKey(80, true, false)),
+                () -> assertFalse(WarehouseDropModel.isDropKey(87, true, false)),
+                () -> assertFalse(WarehouseDropModel.isDropKey(0, true, false)));
+    }
+
     // ------------------------------------------------------------ D 组：button 语义
 
     @Test

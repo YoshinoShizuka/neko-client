@@ -191,6 +191,11 @@ public abstract class MixinAbstractContainerScreen<T extends net.minecraft.world
     private void voidwarehouseSearch$onKeyPressed(KeyEvent keyEvent, CallbackInfoReturnable<Boolean> cir) {
         EditBox box = this.voidwarehouseSearch$searchBox;
         if (box == null || !box.isFocused()) {
+            // 快速丢弃（Shift+Q）：搜索框没聚焦时才响应。返回 true 表示已接管，
+            // 必须吞掉这一下 —— 否则原版 Q 会再丢 1 个（原版不区分 Shift）。
+            if (neko.client.WarehouseDrop.handleKey(keyEvent)) {
+                cir.setReturnValue(true);
+            }
             return;
         }
         if (keyEvent.key() == KEY_ESCAPE) {

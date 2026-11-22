@@ -433,44 +433,6 @@ class SearchConfigJsonTest {
         assertEquals("LEFT_CONTROL,LEFT_SHIFT,R", values.keyOpenWarehouse());
     }
 
-    // ------------------------------- 0.5.9：快速丢弃的两个热键
-
-    @Test
-    @DisplayName("J1 🔴 丢弃热键默认 Shift+Q；老配置缺字段也回落到它（Ctrl+Q 交给原版，不配）")
-    void dropHotkeyDefaultsToShiftQ() {
-        SearchConfigJson.Values values = SearchConfigJson.Values.defaults();
-        SearchConfigJson.Values legacy = SearchConfigJson.parse("{\"searchBox\": true}");
-        assertAll(
-                () -> assertEquals("LEFT_SHIFT,Q", values.keyDropStack()),
-                () -> assertEquals("LEFT_SHIFT,Q", legacy.keyDropStack(),
-                        "老配置没有这一项时也要能用默认键，不能让功能看起来不存在"));
-    }
-
-    @Test
-    @DisplayName("J2 两个丢弃热键能穿过 render→parse；模板里带 _readme_drop")
-    void dropHotkeysRoundTrip() {
-        SearchConfigJson.Values written = new SearchConfigJson.Values(
-                true, true, false, false, "", "", "LEFT_CONTROL,LEFT_ALT,BUTTON_2", "", "", "", "",
-                "LEFT_ALT,Z");
-        String text = SearchConfigJson.render(written);
-        SearchConfigJson.Values readBack = SearchConfigJson.parse(text);
-        assertAll(
-                () -> assertEquals(written, readBack),
-                () -> assertEquals("LEFT_ALT,Z", readBack.keyDropStack()),
-                () -> assertTrue(text.contains("\"keyDropStack\": \"LEFT_ALT,Z\"")),
-                () -> assertTrue(text.contains("\"_readme_drop\""),
-                        "手改配置的人必须看得到这两个键管什么"),
-                () -> assertTrue(text.contains("4096"),
-                        "_readme 要写明整格丢弃的单次上限"));
-    }
-
-    @Test
-    @DisplayName("J3 把丢弃热键清空 ⇒ 原样保持为空（等于关掉这条快捷方式，不能长回默认值）")
-    void clearedDropHotkeyStaysEmpty() {
-        SearchConfigJson.Values cleared = SearchConfigJson.parse("{\"keyDropStack\": \"\"}");
-        assertEquals("", cleared.keyDropStack());
-    }
-
     // ------------------------------------------------------------ 小工具
 
     private static SearchConfigJson.Values values(boolean searchBox, boolean fillGesture) {

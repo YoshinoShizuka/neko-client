@@ -59,9 +59,9 @@ public final class SearchKeybinds {
         SearchConfig.OPEN_CONTAINER_MATERIALS.getKeybind()
                 .setCallback(new OpenContainerMaterialsCallback());
         SearchConfig.OPEN_WAREHOUSE.getKeybind().setCallback(new OpenWarehouseCallback());
-        // 快速丢弃（0.5.9）：只注册 Shift+Q（整格）。Q / Ctrl+Q 交给原版 ——
-        // 26.3 的容器界面自己会对悬停槽发 THROW（1 个 / 一组），再注册同键会双发。
-        SearchConfig.DROP_STACK.getKeybind().setCallback(new DropCallback());
+        // 快速丢弃（Shift+Q）**不在这里注册**：malilib 的这条链在 26.3 真机上不派发
+        // （0.5.9 首版日志里一次 `[虚空仓库丢弃]` 都没有）。改挂在
+        // MixinAbstractContainerScreen#keyPressed 上，与原版 keyDrop 同一条路径。
 
         // 🔴 SearchConfig.FILL_COMBO **刻意不挂回调**：它不是一个「按一下就做点什么」的热键，
         // 而是「按住哪些键再点鼠标」的修饰组合，由 MixinAbstractContainerScreen 在
@@ -163,24 +163,6 @@ public final class SearchKeybinds {
                 return false;
             }
             return WarehouseOpenNetwork.requestOpen(Minecraft.getInstance());
-        }
-    }
-
-    /**
-     * 快速丢弃（整格）：对着虚空仓库的一格按 Shift+Q，物品从仓库掉到地上。
-     *
-     * <p>所有门禁（是不是仓库、搜索框是否聚焦、鼠标在不在内容格）都在
-     * {@link WarehouseDrop#drop} 里。返回 {@code false} 时按键会继续交给界面，
-     * 所以搜索框里按这个组合键仍能正常输入。</p>
-     */
-    private static final class DropCallback implements IHotkeyCallback {
-
-        @Override
-        public boolean onKeyAction(KeyAction action, IKeybind keybind) {
-            if (action != KeyAction.PRESS) {
-                return false;
-            }
-            return WarehouseDrop.drop(Minecraft.getInstance());
         }
     }
 

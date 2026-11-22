@@ -167,20 +167,6 @@ public final class SearchConfig implements IConfigHandler {
             HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
-     * 快速丢弃（整格）：Shift+Q，从仓库扣掉这一格并丢到地上（0.5.9）。
-     *
-     * <p>🔴 <b>只注册这一条</b>。「丢 1 个」和「丢一组」交给原版：26.3 的
-     * {@code AbstractContainerScreen#keyPressed} 对悬停槽自己发 THROW
-     * （Q → button 0，Ctrl+Q → button 1）。我们若再注册 Ctrl+Q，会变成
-     * 「我们发一次 + 原版发一次」，0.5.9 首版就是这么把整格丢出去的。</p>
-     *
-     * <p>只用带修饰键的组合，避免影响原版 Q 与搜索框输入。</p>
-     */
-    public static final ConfigHotkey DROP_STACK = new ConfigHotkey(
-            "dropStackHotkey", SearchConfigJson.DEFAULT_KEY_DROP_STACK,
-            HOTKEY_SETTINGS).apply(PREFIX);
-
-    /**
      * 全部条目，按配置界面「全部」页的顺序。
      *
      * <p>用 {@code List<IHotkey>} 一份列表同时喂两个消费者：界面
@@ -191,7 +177,7 @@ public final class SearchConfig implements IConfigHandler {
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
                     FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
-                    OPEN_WAREHOUSE, DROP_STACK);
+                    OPEN_WAREHOUSE);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -210,7 +196,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> GUI_HOTKEYS =
             List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
-                    OPEN_WAREHOUSE, DROP_STACK);
+                    OPEN_WAREHOUSE);
 
     /**
      * 🔴 把开关热键的「切换提示」也翻成中文。
@@ -269,7 +255,6 @@ public final class SearchConfig implements IConfigHandler {
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
             OPEN_CONTAINER_MATERIALS.setHotkeyStringValue(values.keyOpenContainerMaterials());
             OPEN_WAREHOUSE.setHotkeyStringValue(values.keyOpenWarehouse());
-            DROP_STACK.setHotkeyStringValue(values.keyDropStack());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
             VoidWarehouseSearchClient.LOGGER.warn(
@@ -289,8 +274,7 @@ public final class SearchConfig implements IConfigHandler {
                 OPEN_GUI.getHotkeyStringValue(),
                 OPEN_RECIPES.getHotkeyStringValue(),
                 OPEN_CONTAINER_MATERIALS.getHotkeyStringValue(),
-                OPEN_WAREHOUSE.getHotkeyStringValue(),
-                DROP_STACK.getHotkeyStringValue()));
+                OPEN_WAREHOUSE.getHotkeyStringValue()));
 
         Path path = file();
         try {

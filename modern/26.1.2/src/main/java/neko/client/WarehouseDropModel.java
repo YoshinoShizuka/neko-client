@@ -66,4 +66,18 @@ public final class WarehouseDropModel {
 
     /** 整格丢弃的 button 值（服务端 {@code dropFromWarehouse} 里 {@code default} 分支）。 */
     public static final int BUTTON_WHOLE_SLOT = 2;
+
+    /** GLFW 的 Q 键码（自 1.0 起未变；本工程编译类路径上没有 GLFW，所以写成常量）。 */
+    public static final int KEY_Q = 81;
+
+    /**
+     * 这一下按键是不是「快速丢弃整格」：<b>Q + Shift，且不带 Ctrl</b>。
+     *
+     * <p>为什么必须排除 Ctrl：26.3 原版的 Ctrl+Q 是「丢一组」（button 1），
+     * 我们只在 Shift+Q 上接管；Ctrl+Shift+Q 这种混按既不该丢整格、也不该吞掉，
+     * 交给原版按「丢一组」处理最不意外。</p>
+     */
+    public static boolean isDropKey(int key, boolean shiftDown, boolean controlDown) {
+        return key == KEY_Q && shiftDown && !controlDown;
+    }
 }
