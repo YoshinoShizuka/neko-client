@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * 两个功能开关 + 一个聊天静音开关 + 一个投影填充开关 + 五个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
+ * 两个功能开关 + 一个聊天静音开关 + 一个投影填充开关 + 六个热键，<b>全部由 malilib 持有</b>（照 MiniHUD 的做法）。
  *
  * <h2>为什么是 {@code ConfigBooleanHotkeyed}</h2>
  * <p>它是「布尔开关 + 一个热键」的合体：在配置界面里显示成<b>一行</b>
@@ -167,21 +167,15 @@ public final class SearchConfig implements IConfigHandler {
             HOTKEY_SETTINGS).apply(PREFIX);
 
     /**
-     * 快速丢弃：对着虚空仓库的一格按下去，物品从仓库掉到地上（0.5.9）。
+     * 快速丢弃（整格）：Shift+Q，从仓库扣掉这一格并丢到地上（0.5.9）。
      *
-     * <p>两条都是<b>动作</b>热键，不是开关：{@code dropOne} 丢 1 个，
-     * {@code dropStack} 丢掉这一格的全部。默认值沿用 QuickCraft 的
-     * Ctrl+Q / Shift+Q，但语义是仓库特化的 —— 仓库一格可能上万件，
-     * 「丢同类」在这里没有意义（一格就是一种），所以 Ctrl+Q 改成「丢 1 个」。</p>
+     * <p>🔴 <b>只注册这一条</b>。「丢 1 个」和「丢一组」交给原版：26.3 的
+     * {@code AbstractContainerScreen#keyPressed} 对悬停槽自己发 THROW
+     * （Q → button 0，Ctrl+Q → button 1）。我们若再注册 Ctrl+Q，会变成
+     * 「我们发一次 + 原版发一次」，0.5.9 首版就是这么把整格丢出去的。</p>
      *
-     * <p>只用带修饰键的组合：裸 {@code Q} 会与原版丢弃键、以及界面里的搜索框输入
-     * 三面撞车，不值得为了少按一个键去接管它。</p>
+     * <p>只用带修饰键的组合，避免影响原版 Q 与搜索框输入。</p>
      */
-    public static final ConfigHotkey DROP_ONE = new ConfigHotkey(
-            "dropOneHotkey", SearchConfigJson.DEFAULT_KEY_DROP_ONE,
-            HOTKEY_SETTINGS).apply(PREFIX);
-
-    /** 快速丢弃（整格）：Shift+Q，从仓库扣掉这一格并丢到地上。 */
     public static final ConfigHotkey DROP_STACK = new ConfigHotkey(
             "dropStackHotkey", SearchConfigJson.DEFAULT_KEY_DROP_STACK,
             HOTKEY_SETTINGS).apply(PREFIX);
@@ -197,7 +191,7 @@ public final class SearchConfig implements IConfigHandler {
     public static final List<IHotkey> OPTIONS =
             List.of(SEARCH_BOX, FILL_GESTURE, SILENCE_CHAT, PROJECTION_FILL,
                     FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
-                    OPEN_WAREHOUSE, DROP_ONE, DROP_STACK);
+                    OPEN_WAREHOUSE, DROP_STACK);
 
     /**
      * 配置界面「通用」页：三个开关（第三个是聊天静音）。
@@ -216,7 +210,7 @@ public final class SearchConfig implements IConfigHandler {
      */
     public static final List<IHotkey> GUI_HOTKEYS =
             List.of(FILL_COMBO, OPEN_GUI, OPEN_RECIPES, OPEN_CONTAINER_MATERIALS,
-                    OPEN_WAREHOUSE, DROP_ONE, DROP_STACK);
+                    OPEN_WAREHOUSE, DROP_STACK);
 
     /**
      * 🔴 把开关热键的「切换提示」也翻成中文。
@@ -275,7 +269,6 @@ public final class SearchConfig implements IConfigHandler {
             OPEN_RECIPES.setHotkeyStringValue(values.keyOpenRecipes());
             OPEN_CONTAINER_MATERIALS.setHotkeyStringValue(values.keyOpenContainerMaterials());
             OPEN_WAREHOUSE.setHotkeyStringValue(values.keyOpenWarehouse());
-            DROP_ONE.setHotkeyStringValue(values.keyDropOne());
             DROP_STACK.setHotkeyStringValue(values.keyDropStack());
         } catch (IOException | RuntimeException broken) {
             // 文件坏了不能把功能一起带走：留着当前内存值，只报一行
@@ -297,7 +290,6 @@ public final class SearchConfig implements IConfigHandler {
                 OPEN_RECIPES.getHotkeyStringValue(),
                 OPEN_CONTAINER_MATERIALS.getHotkeyStringValue(),
                 OPEN_WAREHOUSE.getHotkeyStringValue(),
-                DROP_ONE.getHotkeyStringValue(),
                 DROP_STACK.getHotkeyStringValue()));
 
         Path path = file();

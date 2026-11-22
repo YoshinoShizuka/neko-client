@@ -436,16 +436,14 @@ class SearchConfigJsonTest {
     // ------------------------------- 0.5.9：快速丢弃的两个热键
 
     @Test
-    @DisplayName("J1 🔴 丢弃热键默认 Ctrl+Q / Shift+Q；老配置缺字段也回落到它们")
-    void dropHotkeysDefaultToQuickCraftKeys() {
+    @DisplayName("J1 🔴 丢弃热键默认 Shift+Q；老配置缺字段也回落到它（Ctrl+Q 交给原版，不配）")
+    void dropHotkeyDefaultsToShiftQ() {
         SearchConfigJson.Values values = SearchConfigJson.Values.defaults();
         SearchConfigJson.Values legacy = SearchConfigJson.parse("{\"searchBox\": true}");
         assertAll(
-                () -> assertEquals("LEFT_CONTROL,Q", values.keyDropOne()),
                 () -> assertEquals("LEFT_SHIFT,Q", values.keyDropStack()),
-                () -> assertEquals("LEFT_CONTROL,Q", legacy.keyDropOne(),
-                        "老配置没有这一项时也要能用默认键，不能让功能看起来不存在"),
-                () -> assertEquals("LEFT_SHIFT,Q", legacy.keyDropStack()));
+                () -> assertEquals("LEFT_SHIFT,Q", legacy.keyDropStack(),
+                        "老配置没有这一项时也要能用默认键，不能让功能看起来不存在"));
     }
 
     @Test
@@ -453,14 +451,12 @@ class SearchConfigJsonTest {
     void dropHotkeysRoundTrip() {
         SearchConfigJson.Values written = new SearchConfigJson.Values(
                 true, true, false, false, "", "", "LEFT_CONTROL,LEFT_ALT,BUTTON_2", "", "", "", "",
-                "LEFT_ALT,X", "LEFT_ALT,Z");
+                "LEFT_ALT,Z");
         String text = SearchConfigJson.render(written);
         SearchConfigJson.Values readBack = SearchConfigJson.parse(text);
         assertAll(
                 () -> assertEquals(written, readBack),
-                () -> assertEquals("LEFT_ALT,X", readBack.keyDropOne()),
                 () -> assertEquals("LEFT_ALT,Z", readBack.keyDropStack()),
-                () -> assertTrue(text.contains("\"keyDropOne\": \"LEFT_ALT,X\"")),
                 () -> assertTrue(text.contains("\"keyDropStack\": \"LEFT_ALT,Z\"")),
                 () -> assertTrue(text.contains("\"_readme_drop\""),
                         "手改配置的人必须看得到这两个键管什么"),
@@ -470,12 +466,9 @@ class SearchConfigJsonTest {
 
     @Test
     @DisplayName("J3 把丢弃热键清空 ⇒ 原样保持为空（等于关掉这条快捷方式，不能长回默认值）")
-    void clearedDropHotkeysStayEmpty() {
-        SearchConfigJson.Values cleared = SearchConfigJson.parse(
-                "{\"keyDropOne\": \"\", \"keyDropStack\": \"\"}");
-        assertAll(
-                () -> assertEquals("", cleared.keyDropOne()),
-                () -> assertEquals("", cleared.keyDropStack()));
+    void clearedDropHotkeyStaysEmpty() {
+        SearchConfigJson.Values cleared = SearchConfigJson.parse("{\"keyDropStack\": \"\"}");
+        assertEquals("", cleared.keyDropStack());
     }
 
     // ------------------------------------------------------------ 小工具

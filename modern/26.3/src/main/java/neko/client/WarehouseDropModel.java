@@ -64,15 +64,6 @@ public final class WarehouseDropModel {
         return hasItem && mayPickup && visible;
     }
 
-    /**
-     * 服务端 {@code THROW} 的 button 语义。
-     *
-     * <p>0 = 丢 1 个；1 = 丢<b>整格</b>。必须与 26.3 原版
-     * {@code AbstractContainerMenu#doClick} 的 THROW 分支一致：它对
-     * {@code button != 0} 就是「取该槽全部数量」。客户端预测和服务端扣账要是两个答案，
-     * 界面就会先少一整格、再被同步打回 —— 看起来像「丢了又回来」。</p>
-     */
-    public static int button(boolean wholeStack) {
-        return wholeStack ? 1 : 0;
-    }
+    /** 整格丢弃的 button 值（服务端 {@code dropFromWarehouse} 里 {@code default} 分支）。 */
+    public static final int BUTTON_WHOLE_SLOT = 2;
 }

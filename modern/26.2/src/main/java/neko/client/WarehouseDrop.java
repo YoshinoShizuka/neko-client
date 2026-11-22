@@ -46,12 +46,17 @@ public final class WarehouseDrop {
     }
 
     /**
-     * 对着鼠标悬停的仓库格发一次丢弃。
+     * 对着鼠标悬停的仓库格发一次<b>整格</b>丢弃（Shift+Q）。
      *
-     * @param wholeStack {@code true} = 丢掉这一格全部；{@code false} = 只丢 1 个
+     * <p>「丢 1 个」与「丢一组」走<b>原版</b>的 Q / Ctrl+Q，不在这里重复实现 ——
+     * 26.3 的 {@code AbstractContainerScreen#keyPressed} 自己就会对悬停槽发
+     * {@code THROW}（Q → button 0，Ctrl+Q → button 1）。我们再注册同名热键只会
+     * 造成「我们发一次 + 原版发一次」的双发，0.5.9 首版被玩家报「按一下丢了一整格」
+     * 就是这条路径。</p>
+     *
      * @return {@code true} = 请求已发出（不代表服务端一定扣了账，看界面数量变化）
      */
-    public static boolean drop(Minecraft client, boolean wholeStack) {
+    public static boolean drop(Minecraft client) {
         if (client == null || client.player == null || client.gameMode == null) {
             return false;
         }
@@ -98,7 +103,7 @@ public final class WarehouseDrop {
             return false;
         }
 
-        int button = WarehouseDropModel.button(wholeStack);
+        int button = WarehouseDropModel.BUTTON_WHOLE_SLOT;
         try {
             client.gameMode.handleContainerInput(
                     screen.getMenu().containerId,

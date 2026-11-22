@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -84,10 +85,13 @@ class WarehouseDropModelTest {
     // ------------------------------------------------------------ D 组：button 语义
 
     @Test
-    @DisplayName("D1 🔴 button 必须与 26.3 原版 THROW 的预测一致：0 = 1 个，1 = 整格")
-    void buttonMatchesVanillaPrediction() {
+    @DisplayName("D1 🔴 整格丢弃必须用 button=2：0 / 1 已经分别是原版的「1 个 / 一组」")
+    void wholeSlotUsesButtonTwo() {
         assertAll(
-                () -> assertEquals(0, WarehouseDropModel.button(false)),
-                () -> assertEquals(1, WarehouseDropModel.button(true)));
+                () -> assertEquals(2, WarehouseDropModel.BUTTON_WHOLE_SLOT),
+                () -> assertNotEquals(0, WarehouseDropModel.BUTTON_WHOLE_SLOT,
+                        "0 是原版 Q 的语义，抢了它就会把「丢 1 个」变成整格"),
+                () -> assertNotEquals(1, WarehouseDropModel.BUTTON_WHOLE_SLOT,
+                        "1 是原版 Ctrl+Q 的语义（一组），抢了它 Ctrl+Q 会丢整格"));
     }
 }
